@@ -26,7 +26,10 @@ function RunRow({ run, onClick }) {
       </div>
       <div className="metric">{run.distance}<span className="u">km</span></div>
       <div className="metric">{formatDuration(run.duration)}</div>
-      <div className="metric">{run.paceStr}<span className="u">/km</span></div>
+      <div className="metric">
+        {run.pace ? (3600 / run.pace).toFixed(1) : "—"}<span className="u">km/h</span>
+        <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>{run.paceStr}/km</div>
+      </div>
       <div style={{ width: 80, height: 40 }}>
         <Sparkline values={run.splits} />
       </div>

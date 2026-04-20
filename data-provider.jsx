@@ -386,10 +386,6 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
     duration: "",
     speed: "",
     computeMode: "speed", // which field is auto-derived
-    elevation: "",
-    hr: "",
-    cadence: "",
-    feel: 3,
     segments: [],
   });
 
@@ -404,10 +400,6 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
         speed: editing.distance && editing.duration
           ? (editing.distance / (editing.duration / 3600)).toFixed(2) : "",
         computeMode: "speed",
-        elevation: String(editing.elevation || ""),
-        hr: String(editing.hr || ""),
-        cadence: String(editing.cadence || ""),
-        feel: editing.feel || 3,
         segments: (editing.segments || []).map((s) => ({
           distance: String(s.distance || ""),
           duration: formatDurationStr(s.duration || 0),
@@ -421,8 +413,7 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
       setForm({
         date: new Date().toISOString().slice(0, 10),
         type: "Easy", routeName: "", distance: "", duration: "", speed: "",
-        computeMode: "speed",
-        elevation: "", hr: "", cadence: "", feel: 3, segments: [],
+        computeMode: "speed", segments: [],
       });
     }
   }, [editing, open]);
@@ -626,18 +617,6 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
               })()}
             </div>
           )}
-          <Field label="Elevation (m)">
-            <input value={form.elevation} onChange={(e) => upd("elevation", e.target.value)} placeholder="34" style={inputStyle} />
-          </Field>
-          <Field label="Avg HR">
-            <input value={form.hr} onChange={(e) => upd("hr", e.target.value)} placeholder="152" style={inputStyle} />
-          </Field>
-          <Field label="Cadence (spm)">
-            <input value={form.cadence} onChange={(e) => upd("cadence", e.target.value)} placeholder="176" style={inputStyle} />
-          </Field>
-          <Field label="Feel (1-5)">
-            <input type="number" min="1" max="5" value={form.feel} onChange={(e) => upd("feel", parseInt(e.target.value) || 3)} style={inputStyle} />
-          </Field>
         </div>
 
         <div style={{
