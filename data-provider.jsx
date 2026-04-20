@@ -3,6 +3,29 @@
 
 const DataCtx = React.createContext(null);
 
+// Error boundary so a render crash shows a message instead of a black page
+class ErrorBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) { console.error("UI crash:", err, info); }
+  render() {
+    if (this.state.err) {
+      return React.createElement("div", {
+        style: { padding: 32, color: "#ff9c88", fontFamily: "JetBrains Mono, monospace", maxWidth: 640, margin: "40px auto" }
+      },
+        React.createElement("div", { style: { fontSize: 10, textTransform: "uppercase", letterSpacing: "0.12em", color: "#888" } }, "Something crashed"),
+        React.createElement("h2", { style: { fontSize: 22, margin: "8px 0 16px", color: "#fff" } }, "The app hit an error"),
+        React.createElement("pre", { style: { background: "#1a1a1a", padding: 16, borderRadius: 8, fontSize: 12, overflow: "auto", color: "#ff9c88", whiteSpace: "pre-wrap" } }, String(this.state.err?.stack || this.state.err)),
+        React.createElement("button", {
+          onClick: () => { this.setState({ err: null }); location.reload(); },
+          style: { marginTop: 16, padding: "10px 20px", background: "#d4ff3a", color: "#000", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }
+        }, "Reload page")
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function useData() {
   return React.useContext(DataCtx);
 }
@@ -492,14 +515,21 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
       vibe: editing?.vibe || "flat",
     };
     if (isEdit) await onEdit(editing.id, run);
-    else await onAdd(run);
+    else {
+      try { await onAdd(run); }
+      catch (err) {
+        console.error("Could not save run:", err);
+        alert("Could not save: " + (err?.message || err));
+        return;
+      }
+    }
     onClose();
   };
 
   const handleDelete = async () => {
     if (!editing) return;
     if (!confirm(`Delete "${editing.routeName}" on ${editing.date.toLocaleDateString()}?`)) return;
-    await onDelete(editing.id);
+    try { await onDelete(editing.id); } catch (err) { alert("Could not delete: " + (err?.message || err)); return; }
     onClose();
   };
 
@@ -959,4 +989,4 @@ function RepeatHalf({ label, half, data, onChange }) {
   );
 }
 
-Object.assign(window, { DataCtx, DataProvider, useData, ConfigPanel, AddRunModal, GoalModal, PlanModal });
+Object.assign(window, { DataCtx, DataProvider, useData, ConfigPanel, AddRunModal, GoalModal, PlanModal, ErrorBoundary });

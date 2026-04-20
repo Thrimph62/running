@@ -207,9 +207,13 @@ function Shell() {
 
 function App() {
   return (
-    <DataProvider>
-      <Shell />
-    </DataProvider>
+    <ErrorBoundary>
+      <DataProvider>
+        <ErrorBoundary>
+          <Shell />
+        </ErrorBoundary>
+      </DataProvider>
+    </ErrorBoundary>
   );
 }
 
