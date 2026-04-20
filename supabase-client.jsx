@@ -254,14 +254,17 @@ async function fetchProfile() {
 
 async function updateProfile(p) {
   if (!supabaseReady) return;
-  await supabase.from("profile").update({
+  // Use upsert so the row is created if it doesn't exist yet (e.g. fresh schema).
+  const { error } = await supabase.from("profile").upsert({
+    id: 1,
     name: p.name,
     tagline: p.tagline,
     pr_5k: p.pr5k,
     pr_10k: p.pr10k,
     pr_half: p.prHalf,
     updated_at: new Date().toISOString(),
-  }).eq("id", 1);
+  }, { onConflict: "id" });
+  if (error) throw error;
 }
 
 Object.assign(window, {

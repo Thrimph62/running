@@ -57,8 +57,18 @@ function DataProvider({ children }) {
   }, []);
 
   const saveProfile = async (p) => {
-    setProfile(p);
-    if (mode === "supabase") await updateProfile(p);
+    setProfile(p); // optimistic local update
+    if (mode === "supabase") {
+      try {
+        await updateProfile(p);
+        // Re-fetch to confirm what was actually stored
+        const fresh = await fetchProfile();
+        if (fresh) setProfile(fresh);
+      } catch (err) {
+        console.error("Could not save profile:", err);
+        alert("Could not save profile: " + (err?.message || err));
+      }
+    }
   };
 
   React.useEffect(() => { reload(); }, [reload]);
