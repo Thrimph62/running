@@ -52,6 +52,7 @@ function DataProvider({ children }) {
     await updateRun(id, run);
     const fresh = await fetchRuns();
     if (fresh) setRuns(fresh);
+  };
 
   const removeRun = async (id) => {
     if (mode !== "supabase") return;
