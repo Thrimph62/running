@@ -304,7 +304,8 @@ function segmentTotals(segments) {
   let dist = 0, dur = 0;
   for (const s of segments) {
     const d = parseFloat(s.distance) || 0;
-    const t = parseDurationStr(s.duration);
+    // duration can be a seconds-number (from submit) or a "mm:ss" string (from the live form)
+    const t = typeof s.duration === "number" ? s.duration : parseDurationStr(s.duration);
     dist += d; dur += t;
   }
   return {
