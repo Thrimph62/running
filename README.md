@@ -20,12 +20,20 @@ Dark, chart-forward running tracker. Runs on GitHub Pages. Syncs across devices 
 3. **Settings → Pages** → Source: **Deploy from branch**, branch: **main**, folder: **`/ (root)`** → **Save**
 4. Wait ~60 seconds, then visit `https://<your-username>.github.io/running/`
 
-## Part C — First-run configuration
+## Part C — Configure credentials (one-time, in GitHub)
 
-1. Open the site on any device
-2. A **Sync settings** panel appears on first visit (or click "Sync settings" in the left sidebar)
-3. Paste the Project URL + anon key → **Save & connect**
-4. Repeat on each device you want to sync
+Open **`config.js`** in your repo → click the pencil icon → paste your Supabase URL and anon key:
+
+```js
+window.PACELOG_CONFIG = {
+  supabaseUrl: "https://xxxxx.supabase.co",
+  supabaseKey: "eyJhbGci...",
+};
+```
+
+Commit. Pages redeploys in ~60s. **Every device that visits the URL is now connected automatically — no per-device setup.**
+
+If you'd rather not commit the key to GitHub, leave `config.js` blank and each device will show a Sync-settings dialog on first visit instead.
 
 ## Updates
 

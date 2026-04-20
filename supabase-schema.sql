@@ -36,7 +36,7 @@ create table if not exists public.plan (
   date timestamptz not null,
   type text not null,
   distance numeric not null,
-  desc text,
+  description text,
   done boolean default false,
   created_at timestamptz default now()
 );

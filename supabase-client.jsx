@@ -8,9 +8,17 @@ let supabase = null;
 let supabaseReady = false;
 
 function getSupabaseConfig() {
+  // Priority: repo-level config.js (shared across devices) > localStorage (per-device override)
+  const fileCfg = window.PACELOG_CONFIG || {};
+  const fileUrl = (fileCfg.supabaseUrl || "").trim();
+  const fileKey = (fileCfg.supabaseKey || "").trim();
+  if (fileUrl && fileKey) {
+    return { url: fileUrl, key: fileKey, source: "file" };
+  }
   return {
     url: localStorage.getItem(LS_URL) || "",
     key: localStorage.getItem(LS_KEY) || "",
+    source: "local",
   };
 }
 
@@ -132,7 +140,7 @@ async function fetchPlan() {
     date: new Date(p.date),
     type: p.type,
     distance: Number(p.distance),
-    desc: p.desc || "",
+    desc: p.description || "",
     done: p.done,
   }));
 }
