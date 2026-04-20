@@ -286,6 +286,62 @@ function paceToSpeed(paceSecPerKm) {
   return +(3600 / paceSecPerKm).toFixed(1);
 }
 
+// Compute the missing field from the other two.
+// mode: "distance" = compute distance from duration + speed
+//       "duration" = compute duration from distance + speed
+//       "speed"    = compute speed from distance + duration (default, display only)
+// Returns { distance, duration, speed } as strings ready for inputs.
+function deriveFromTwo(form, mode) {
+  const d = parseFloat(form.distance);
+  const t = parseDurationStr(form.duration);
+  const s = parseFloat(form.speed);
+  if (mode === "distance" && t > 0 && s > 0) {
+    const dist = s * (t / 3600);
+    return { ...form, distance: dist.toFixed(2) };
+  }
+  if (mode === "duration" && d > 0 && s > 0) {
+    const dur = Math.round((d / s) * 3600);
+    return { ...form, duration: formatDurationStr(dur) };
+  }
+  if (mode === "speed" && d > 0 && t > 0) {
+    const spd = d / (t / 3600);
+    return { ...form, speed: spd.toFixed(2) };
+  }
+  return form;
+}
+
+// After the user edited `editedKey`, pick the right computeMode based on which
+// two fields now have values. Rule: auto-compute the field that is still empty,
+// or the field the user is NOT currently editing if all three have values.
+function chooseMode(next, editedKey) {
+  const filled = {
+    distance: parseFloat(next.distance) > 0,
+    duration: parseDurationStr(next.duration) > 0,
+    speed: parseFloat(next.speed) > 0,
+  };
+  const keys = ["distance", "duration", "speed"];
+  const empty = keys.filter((k) => !filled[k]);
+  if (empty.length === 1) return empty[0];
+  if (empty.length === 0) {
+    // All three filled — auto-compute whichever isn't the edited one and isn't
+    // the current mode, falling back to "speed".
+    const candidate = keys.find((k) => k !== editedKey && k !== next.computeMode) || "speed";
+    return candidate;
+  }
+  // 2+ empty → keep current mode (nothing to derive yet)
+  return next.computeMode;
+}
+
+// High-level helper: apply an edit to a {distance, duration, speed, computeMode}
+// object, picking the right mode automatically and deriving the missing field.
+function applyEdit(obj, key, value) {
+  const next = { ...obj, [key]: value };
+  if (key !== "distance" && key !== "duration" && key !== "speed") return next;
+  const mode = chooseMode(next, key);
+  next.computeMode = mode;
+  return deriveFromTwo(next, mode);
+}
+
 // --- Add/edit run form ---
 function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
   const isEdit = !!editing;
@@ -295,6 +351,8 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
     routeName: "",
     distance: "",
     duration: "",
+    speed: "",
+    computeMode: "speed", // which field is auto-derived
     elevation: "",
     hr: "",
     cadence: "",
@@ -310,6 +368,9 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
         routeName: editing.routeName,
         distance: String(editing.distance),
         duration: formatDurationStr(editing.duration),
+        speed: editing.distance && editing.duration
+          ? (editing.distance / (editing.duration / 3600)).toFixed(2) : "",
+        computeMode: "speed",
         elevation: String(editing.elevation || ""),
         hr: String(editing.hr || ""),
         cadence: String(editing.cadence || ""),
@@ -317,13 +378,17 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
         segments: (editing.segments || []).map((s) => ({
           distance: String(s.distance || ""),
           duration: formatDurationStr(s.duration || 0),
+          speed: s.distance && s.duration
+            ? (s.distance / (s.duration / 3600)).toFixed(2) : "",
+          computeMode: "speed",
           note: s.note || "",
         })),
       });
     } else if (open) {
       setForm({
         date: new Date().toISOString().slice(0, 10),
-        type: "Easy", routeName: "", distance: "", duration: "",
+        type: "Easy", routeName: "", distance: "", duration: "", speed: "",
+        computeMode: "speed",
         elevation: "", hr: "", cadence: "", feel: 3, segments: [],
       });
     }
@@ -331,42 +396,83 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
 
   if (!open) return null;
 
-  const upd = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  // Any edit to distance/duration/speed runs through applyEdit which picks the
+  // right computeMode (fills in the empty field when possible) and derives it.
+  const upd = (k, v) => setForm((f) => applyEdit(f, k, v));
+
+  const setComputeMode = (mode) => setForm((f) => deriveFromTwo({ ...f, computeMode: mode }, mode));
 
   const hasSegments = form.segments.length > 0;
   const segTotals = hasSegments ? segmentTotals(form.segments) : null;
 
-  const addSegment = () => setForm((f) => ({
-    ...f,
-    segments: [...f.segments, { distance: "", duration: "", note: "" }],
-  }));
+  const blankSeg = () => ({ distance: "", duration: "", speed: "", computeMode: "speed", note: "" });
+
+  const addSegment = () => setForm((f) => ({ ...f, segments: [...f.segments, blankSeg()] }));
   const removeSegment = (i) => setForm((f) => ({
     ...f,
     segments: f.segments.filter((_, idx) => idx !== i),
   }));
   const updSegment = (i, k, v) => setForm((f) => ({
     ...f,
-    segments: f.segments.map((s, idx) => idx === i ? { ...s, [k]: v } : s),
+    segments: f.segments.map((s, idx) => idx === i ? applyEdit(s, k, v) : s),
   }));
+  const setSegMode = (i, mode) => setForm((f) => ({
+    ...f,
+    segments: f.segments.map((s, idx) => idx === i ? deriveFromTwo({ ...s, computeMode: mode }, mode) : s),
+  }));
+
+  // Repeat block: user defines two "halves" (high + low) and a rep count.
+  // Pressing Add appends `rep × [high, low]` segments.
+  const [repeat, setRepeat] = React.useState({
+    reps: 5,
+    high: { distance: "", duration: "", speed: "", computeMode: "speed", note: "work" },
+    low:  { distance: "", duration: "", speed: "", computeMode: "speed", note: "rest" },
+  });
+  const updRepeat = (half, k, v) => setRepeat((r) => {
+    if (k === "computeMode") {
+      return { ...r, [half]: deriveFromTwo({ ...r[half], computeMode: v }, v) };
+    }
+    return { ...r, [half]: applyEdit(r[half], k, v) };
+  });
+  const addRepeatBlock = () => {
+    const reps = Math.max(1, parseInt(repeat.reps) || 1);
+    // Resolve each half (so speed-based entries become distance+duration in the list)
+    const high = deriveFromTwo(repeat.high, repeat.high.computeMode);
+    const low = deriveFromTwo(repeat.low, repeat.low.computeMode);
+    const highOk = parseFloat(high.distance) > 0 && parseDurationStr(high.duration) > 0;
+    const lowOk = parseFloat(low.distance) > 0 && parseDurationStr(low.duration) > 0;
+    if (!highOk && !lowOk) return;
+    const toAdd = [];
+    for (let i = 0; i < reps; i++) {
+      if (highOk) toAdd.push({ ...high });
+      if (lowOk) toAdd.push({ ...low });
+    }
+    setForm((f) => ({ ...f, segments: [...f.segments, ...toAdd] }));
+  };
 
   const submit = async (e) => {
     e.preventDefault();
     let dist, dur, segments = [];
     if (hasSegments) {
       segments = form.segments
-        .map((s) => ({
-          distance: parseFloat(s.distance) || 0,
-          duration: parseDurationStr(s.duration),
-          note: s.note || "",
-        }))
+        .map((s) => {
+          // Ensure distance + duration are filled (resolve from speed if needed)
+          const resolved = deriveFromTwo(s, s.computeMode);
+          return {
+            distance: parseFloat(resolved.distance) || 0,
+            duration: parseDurationStr(resolved.duration),
+            note: s.note || "",
+          };
+        })
         .filter((s) => s.distance > 0 && s.duration > 0)
         .map((s) => ({ ...s, pace: Math.round(s.duration / s.distance) }));
       if (segments.length === 0) return;
       const t = segmentTotals(segments.map((s) => ({ distance: s.distance, duration: s.duration })));
       dist = t.distance; dur = t.duration;
     } else {
-      dist = parseFloat(form.distance);
-      dur = parseDurationStr(form.duration);
+      const resolved = deriveFromTwo(form, form.computeMode);
+      dist = parseFloat(resolved.distance);
+      dur = parseDurationStr(resolved.duration);
     }
     if (!dist || !dur || !form.routeName) return;
     const pace = Math.round(dur / dist);
@@ -428,14 +534,28 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
             <input value={form.routeName} onChange={(e) => upd("routeName", e.target.value)} placeholder="Riverside Loop" style={inputStyle} />
           </Field>
           {!hasSegments && (
-            <>
-              <Field label="Distance (km)">
-                <input value={form.distance} onChange={(e) => upd("distance", e.target.value)} placeholder="5.2" style={inputStyle} />
-              </Field>
-              <Field label="Duration (mm:ss)">
-                <input value={form.duration} onChange={(e) => upd("duration", e.target.value)} placeholder="26:30" style={inputStyle} />
-              </Field>
-            </>
+            <div style={{ gridColumn: "span 2" }}>
+              <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>
+                Distance · Duration · Speed
+                <span style={{ marginLeft: 10, color: "var(--text-2)", textTransform: "none", letterSpacing: 0, fontSize: 11 }}>
+                  enter any two, third auto-fills
+                </span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                <ComputeField
+                  mode="distance" currentMode={form.computeMode} onPickMode={setComputeMode}
+                  label="km" placeholder="5.2"
+                  value={form.distance} onChange={(v) => upd("distance", v)} />
+                <ComputeField
+                  mode="duration" currentMode={form.computeMode} onPickMode={setComputeMode}
+                  label="mm:ss" placeholder="26:30"
+                  value={form.duration} onChange={(v) => upd("duration", v)} />
+                <ComputeField
+                  mode="speed" currentMode={form.computeMode} onPickMode={setComputeMode}
+                  label="km/h" placeholder="11.8"
+                  value={form.speed} onChange={(v) => upd("speed", v)} />
+              </div>
+            </div>
           )}
           <Field label="Elevation (m)">
             <input value={form.elevation} onChange={(e) => upd("elevation", e.target.value)} placeholder="34" style={inputStyle} />
@@ -470,51 +590,49 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{
                 display: "grid",
-                gridTemplateColumns: "28px 1fr 1fr 90px 1.2fr 28px",
+                gridTemplateColumns: "24px 1fr 1fr 1fr 84px 1.1fr 28px",
                 gap: 8, alignItems: "center",
                 fontFamily: "JetBrains Mono, monospace", fontSize: 10,
-                color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em",
+                color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.1em",
                 padding: "0 4px",
               }}>
                 <div>#</div>
-                <div>Distance (km)</div>
-                <div>Duration (mm:ss)</div>
-                <div>Speed</div>
+                <div>km</div>
+                <div>mm:ss</div>
+                <div>km/h</div>
+                <div>Auto-fill</div>
                 <div>Note</div>
                 <div />
               </div>
-              {form.segments.map((s, i) => {
-                const d = parseFloat(s.distance) || 0;
-                const t = parseDurationStr(s.duration);
-                const speed = d && t ? +(d / (t / 3600)).toFixed(1) : 0;
-                return (
-                  <div key={i} style={{
-                    display: "grid",
-                    gridTemplateColumns: "28px 1fr 1fr 90px 1.2fr 28px",
-                    gap: 8, alignItems: "center",
-                  }}>
-                    <div className="mono" style={{ fontSize: 12, color: "var(--text-3)" }}>{i + 1}</div>
-                    <input value={s.distance} onChange={(e) => updSegment(i, "distance", e.target.value)}
-                      placeholder="1.0" style={inputStyle} />
-                    <input value={s.duration} onChange={(e) => updSegment(i, "duration", e.target.value)}
-                      placeholder="7:30" style={inputStyle} />
-                    <div className="mono" style={{ fontSize: 12, color: speed ? "var(--text)" : "var(--text-3)" }}>
-                      {speed ? `${speed} km/h` : "—"}
-                    </div>
-                    <input value={s.note} onChange={(e) => updSegment(i, "note", e.target.value)}
-                      placeholder="warmup / tempo / rest" style={inputStyle} />
-                    <button type="button" onClick={() => removeSegment(i)}
-                      style={{
-                        background: "transparent", border: "1px solid var(--line)", color: "var(--text-3)",
-                        borderRadius: 6, height: 32, cursor: "pointer", padding: 0,
-                      }}>×</button>
-                  </div>
-                );
-              })}
+              {form.segments.map((s, i) => (
+                <div key={i} style={{
+                  display: "grid",
+                  gridTemplateColumns: "24px 1fr 1fr 1fr 84px 1.1fr 28px",
+                  gap: 8, alignItems: "center",
+                }}>
+                  <div className="mono" style={{ fontSize: 12, color: "var(--text-3)" }}>{i + 1}</div>
+                  <SegInput field="distance" seg={s} onChange={(v) => updSegment(i, "distance", v)} placeholder="1.0" />
+                  <SegInput field="duration" seg={s} onChange={(v) => updSegment(i, "duration", v)} placeholder="7:30" />
+                  <SegInput field="speed" seg={s} onChange={(v) => updSegment(i, "speed", v)} placeholder="8.0" />
+                  <select value={s.computeMode} onChange={(e) => setSegMode(i, e.target.value)}
+                    style={{ ...inputStyle, padding: "0 6px", fontSize: 11 }}>
+                    <option value="distance">km</option>
+                    <option value="duration">time</option>
+                    <option value="speed">speed</option>
+                  </select>
+                  <input value={s.note} onChange={(e) => updSegment(i, "note", e.target.value)}
+                    placeholder="warmup / tempo / rest" style={inputStyle} />
+                  <button type="button" onClick={() => removeSegment(i)}
+                    style={{
+                      background: "transparent", border: "1px solid var(--line)", color: "var(--text-3)",
+                      borderRadius: 6, height: 32, cursor: "pointer", padding: 0,
+                    }}>×</button>
+                </div>
+              ))}
               <div style={{
                 display: "flex", gap: 20, padding: "10px 4px 0",
                 borderTop: "1px dashed var(--line)", marginTop: 4,
-                fontFamily: "JetBrains Mono, monospace", fontSize: 12,
+                fontFamily: "JetBrains Mono, monospace", fontSize: 12, flexWrap: "wrap",
               }}>
                 <div><span style={{ color: "var(--text-3)" }}>TOTAL</span> {segTotals.distance}km</div>
                 <div><span style={{ color: "var(--text-3)" }}>TIME</span> {formatDurationStr(segTotals.duration)}</div>
@@ -523,6 +641,33 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
               </div>
             </div>
           )}
+
+          {/* Repeat block builder */}
+          <div style={{
+            marginTop: 16, padding: 14,
+            background: "var(--bg-2)", border: "1px dashed var(--line)", borderRadius: 10,
+          }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+              <div>
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+                  Repeat block
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 2 }}>
+                  e.g. 5× (400m @ 16 km/h · 60s @ 10 km/h). Leave one half empty for unpaired intervals.
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="number" min="1" max="50"
+                  value={repeat.reps}
+                  onChange={(e) => setRepeat((r) => ({ ...r, reps: e.target.value }))}
+                  style={{ ...inputStyle, width: 64, textAlign: "center" }} />
+                <div className="mono" style={{ fontSize: 11, color: "var(--text-3)" }}>×</div>
+                <button type="button" className="btn" onClick={addRepeatBlock}>Append block</button>
+              </div>
+            </div>
+            <RepeatHalf label="Fast / work" half="high" data={repeat.high} onChange={updRepeat} />
+            <RepeatHalf label="Slow / rest" half="low" data={repeat.low} onChange={updRepeat} />
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: 8, marginTop: 24, justifyContent: "space-between" }}>
@@ -733,6 +878,84 @@ function Field({ label, children, span }) {
       <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>{label}</div>
       {children}
     </label>
+  );
+}
+
+// One of {distance, duration, speed}. Shows a tiny badge + compute icon if it's the auto-filled one.
+function ComputeField({ mode, currentMode, onPickMode, label, placeholder, value, onChange }) {
+  const isComputed = mode === currentMode;
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          ...inputStyle,
+          paddingRight: 42,
+          color: isComputed ? "var(--accent)" : "var(--text)",
+          borderColor: isComputed ? "var(--accent)" : "var(--line)",
+          fontFamily: "JetBrains Mono, monospace",
+        }}
+      />
+      <button type="button"
+        title={isComputed ? "Auto-filled from the other two" : "Click to auto-fill this field"}
+        onClick={() => onPickMode(mode)}
+        style={{
+          position: "absolute", right: 4, top: 4, bottom: 4, width: 34,
+          background: isComputed ? "var(--accent)" : "transparent",
+          color: isComputed ? "#0b0b0b" : "var(--text-3)",
+          border: "none", borderRadius: 4, cursor: "pointer",
+          fontFamily: "JetBrains Mono, monospace", fontSize: 9,
+          textTransform: "uppercase", letterSpacing: "0.08em",
+        }}>
+        {isComputed ? "auto" : label}
+      </button>
+    </div>
+  );
+}
+
+// Segment input: distance/duration/speed cell. Read-only appearance when it's the computed one for the row.
+function SegInput({ field, seg, onChange, placeholder }) {
+  const isComputed = seg.computeMode === field;
+  return (
+    <input
+      value={seg[field] || ""}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      style={{
+        ...inputStyle,
+        color: isComputed ? "var(--accent)" : "var(--text)",
+        borderColor: isComputed ? "var(--accent)" : "var(--line)",
+        fontFamily: "JetBrains Mono, monospace",
+      }}
+    />
+  );
+}
+
+// One "half" of a repeat block (e.g. the 'fast' row).
+function RepeatHalf({ label, half, data, onChange }) {
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "110px 1fr 1fr 1fr 84px 1.1fr",
+      gap: 8, alignItems: "center", marginBottom: 8,
+    }}>
+      <div className="mono" style={{ fontSize: 10, color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+        {label}
+      </div>
+      <SegInput field="distance" seg={data} onChange={(v) => onChange(half, "distance", v)} placeholder="0.4" />
+      <SegInput field="duration" seg={data} onChange={(v) => onChange(half, "duration", v)} placeholder="1:30" />
+      <SegInput field="speed" seg={data} onChange={(v) => onChange(half, "speed", v)} placeholder="16" />
+      <select value={data.computeMode} onChange={(e) => onChange(half, "computeMode", e.target.value)}
+        style={{ ...inputStyle, padding: "0 6px", fontSize: 11 }}>
+        <option value="distance">km</option>
+        <option value="duration">time</option>
+        <option value="speed">speed</option>
+      </select>
+      <input value={data.note} onChange={(e) => onChange(half, "note", e.target.value)}
+        placeholder="note" style={inputStyle} />
+    </div>
   );
 }
 
