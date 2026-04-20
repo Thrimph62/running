@@ -356,10 +356,9 @@ function chooseMode(next, editedKey) {
   const empty = keys.filter((k) => !filled[k]);
   if (empty.length === 1) return empty[0];
   if (empty.length === 0) {
-    // All three filled — auto-compute whichever isn't the edited one and isn't
-    // the current mode, falling back to "speed".
-    const candidate = keys.find((k) => k !== editedKey && k !== next.computeMode) || "speed";
-    return candidate;
+    // All three filled — always keep the current auto-fill target.
+    // Recomputing the "third" field caused other values to be wiped unexpectedly.
+    return next.computeMode;
   }
   // 2+ empty → keep current mode (nothing to derive yet)
   return next.computeMode;
