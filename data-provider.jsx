@@ -285,7 +285,7 @@ function parseDurationStr(s) {
   if (!s) return 0;
   const parts = String(s).trim().split(":").map(Number);
   if (parts.some(isNaN)) return 0;
-  if (parts.length === 1) return parts[0]; // seconds
+  if (parts.length === 1) return parts[0] * 60; // bare number = minutes (e.g. "2" → 120s)
   if (parts.length === 2) return parts[0] * 60 + parts[1];
   if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
   return 0;
@@ -413,7 +413,7 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
           duration: formatDurationStr(s.duration || 0),
           speed: s.distance && s.duration
             ? (s.distance / (s.duration / 3600)).toFixed(2) : "",
-          computeMode: "speed",
+          computeMode: "distance",
           note: s.note || "",
         })),
       });
@@ -432,8 +432,8 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
   // NOTE: must be declared before the early return to satisfy the Rules of Hooks.
   const [repeat, setRepeat] = React.useState({
     reps: 5,
-    high: { distance: "", duration: "", speed: "", computeMode: "speed", note: "work" },
-    low:  { distance: "", duration: "", speed: "", computeMode: "speed", note: "rest" },
+    high: { distance: "", duration: "", speed: "", computeMode: "distance", note: "work" },
+    low:  { distance: "", duration: "", speed: "", computeMode: "distance", note: "rest" },
   });
 
   if (!open) return null;
@@ -447,7 +447,7 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
   const hasSegments = form.segments.length > 0;
   const segTotals = hasSegments ? segmentTotals(form.segments) : null;
 
-  const blankSeg = () => ({ distance: "", duration: "", speed: "", computeMode: "speed", note: "" });
+  const blankSeg = () => ({ distance: "", duration: "", speed: "", computeMode: "distance", note: "" });
 
   const addSegment = () => setForm((f) => ({ ...f, segments: [...f.segments, blankSeg()] }));
   const removeSegment = (i) => setForm((f) => ({
@@ -639,9 +639,9 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
                 padding: "0 4px",
               }}>
                 <div>#</div>
-                <div>km</div>
                 <div>mm:ss</div>
                 <div>km/h</div>
+                <div>km</div>
                 <div>Auto-fill</div>
                 <div>Note</div>
                 <div />
@@ -653,9 +653,9 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
                   gap: 8, alignItems: "center",
                 }}>
                   <div className="mono" style={{ fontSize: 12, color: "var(--text-3)" }}>{i + 1}</div>
-                  <SegInput field="distance" seg={s} onChange={(v) => updSegment(i, "distance", v)} placeholder="1.0" />
                   <SegInput field="duration" seg={s} onChange={(v) => updSegment(i, "duration", v)} placeholder="7:30" />
                   <SegInput field="speed" seg={s} onChange={(v) => updSegment(i, "speed", v)} placeholder="8.0" />
+                  <SegInput field="distance" seg={s} onChange={(v) => updSegment(i, "distance", v)} placeholder="1.0" />
                   <select value={s.computeMode} onChange={(e) => setSegMode(i, e.target.value)}
                     style={{ ...inputStyle, padding: "0 6px", fontSize: 11 }}>
                     <option value="distance">km</option>
@@ -986,9 +986,9 @@ function RepeatHalf({ label, half, data, onChange }) {
       <div className="mono" style={{ fontSize: 10, color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
         {label}
       </div>
-      <SegInput field="distance" seg={data} onChange={(v) => onChange(half, "distance", v)} placeholder="0.4" />
       <SegInput field="duration" seg={data} onChange={(v) => onChange(half, "duration", v)} placeholder="1:30" />
       <SegInput field="speed" seg={data} onChange={(v) => onChange(half, "speed", v)} placeholder="16" />
+      <SegInput field="distance" seg={data} onChange={(v) => onChange(half, "distance", v)} placeholder="0.4" />
       <select value={data.computeMode} onChange={(e) => onChange(half, "computeMode", e.target.value)}
         style={{ ...inputStyle, padding: "0 6px", fontSize: 11 }}>
         <option value="distance">km</option>
