@@ -19,7 +19,9 @@ const ACCENT_PRESETS = [
 ];
 
 function Rail({ tab, setTab, onConfig }) {
-  const { mode } = useData();
+  const { mode, profile } = useData();
+  const initials = (profile?.name || "??")
+    .split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "??";
   return (
     <aside className="rail">
       <div className="rail-brand">
@@ -65,9 +67,9 @@ function Rail({ tab, setTab, onConfig }) {
         </span>
       </button>
       <div className="rail-profile">
-        <div className="avatar">AX</div>
+        <div className="avatar">{initials}</div>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>Alex Chen</div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{profile?.name || "Your name"}</div>
           <div className="mono" style={{ fontSize: 10, color: "var(--text-3)" }}>
             {mode === "supabase" ? "synced · cloud" : "local · seed data"}
           </div>
@@ -103,11 +105,12 @@ function Tweaks({ accent, setAccent, visible }) {
 }
 
 function Shell() {
-  const { addRun, reload, configOpen, setConfigOpen, mode } = useData();
+  const { addRun, editRun, removeRun, reload, configOpen, setConfigOpen, mode } = useData();
   const savedTab = typeof localStorage !== "undefined" ? localStorage.getItem("pacelog-tab") : null;
   const [tab, setTab] = uSS(savedTab || "home");
   const [openRun, setOpenRun] = uSS(null);
   const [addOpen, setAddOpen] = uSS(false);
+  const [editingRun, setEditingRun] = uSS(null);
   const [tweaksVisible, setTweaksVisible] = uSS(false);
   const [accent, setAccent] = uSS(ACCENT_PRESETS[0]);
 
@@ -162,8 +165,16 @@ function Shell() {
       <main className="main" key={tab}>
         {content}
       </main>
-      <RunDetail run={openRun} onClose={() => setOpenRun(null)} />
-      <AddRunModal open={addOpen} onClose={() => setAddOpen(false)} onAdd={addRun} />
+      <RunDetail run={openRun} onClose={() => setOpenRun(null)}
+        onEdit={(r) => { setOpenRun(null); setEditingRun(r); setAddOpen(true); }} />
+      <AddRunModal
+        open={addOpen}
+        onClose={() => { setAddOpen(false); setEditingRun(null); }}
+        onAdd={addRun}
+        onEdit={editRun}
+        onDelete={removeRun}
+        editing={editingRun}
+      />
       <ConfigPanel
         open={configOpen}
         onClose={() => { setConfigOpen(false); localStorage.setItem("pacelog-config-dismissed", "1"); }}

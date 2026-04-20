@@ -379,10 +379,15 @@ function Stats() {
 
 // --- Goals ---
 function Goals() {
-  const { goals, toggleGoal } = useData();
+  const { goals, toggleGoal, addGoal, editGoal, removeGoal } = useData();
+  const [modalOpen, setModalOpen] = uS(false);
+  const [editing, setEditing] = uS(null);
 
   const active = goals.filter((g) => !g.done);
   const done = goals.filter((g) => g.done);
+
+  const openNew = () => { setEditing(null); setModalOpen(true); };
+  const openEdit = (g) => { setEditing(g); setModalOpen(true); };
 
   return (
     <div className="page">
@@ -392,7 +397,7 @@ function Goals() {
           <div className="sub">{active.length} ACTIVE · {done.length} COMPLETED</div>
         </div>
         <div className="right">
-          <button className="btn">+ New goal</button>
+          <button className="btn" onClick={openNew}>+ New goal</button>
         </div>
       </div>
 
@@ -416,25 +421,28 @@ function Goals() {
 
       <div className="sect-title">
         <h2>Active goals</h2>
-        <div className="meta">TAP TO MARK COMPLETE</div>
+        <div className="meta">TAP CIRCLE TO COMPLETE · CLICK ROW TO EDIT</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {active.map((g) => {
           const pct = Math.min(100, Math.round((g.current / g.target) * 100));
           return (
-            <div key={g.id} className="goal">
-              <div className="goal-check" onClick={() => toggleGoal(g.id)} />
-              <div className="goal-body">
+            <div key={g.id} className="goal" style={{ cursor: "pointer" }}>
+              <div className="goal-check" onClick={(e) => { e.stopPropagation(); toggleGoal(g.id); }} />
+              <div className="goal-body" onClick={() => openEdit(g)}>
                 <div className="goal-title">{g.title}</div>
                 <div className="goal-bar">
                   <div className="fill" style={{ width: `${pct}%` }} />
                 </div>
                 <div className="goal-meta">{g.current}{g.unit} of {g.target}{g.unit} · due {g.due}</div>
               </div>
-              <div className="goal-pct">{pct}%</div>
+              <div className="goal-pct" onClick={() => openEdit(g)}>{pct}%</div>
             </div>
           );
         })}
+        {active.length === 0 && (
+          <div className="muted mono" style={{ fontSize: 12, padding: 16 }}>No active goals. Add one to get started.</div>
+        )}
       </div>
 
       {done.length > 0 && (
@@ -445,13 +453,13 @@ function Goals() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {done.map((g) => (
-              <div key={g.id} className="goal done">
-                <div className="goal-check done" onClick={() => toggleGoal(g.id)}>
+              <div key={g.id} className="goal done" style={{ cursor: "pointer" }}>
+                <div className="goal-check done" onClick={(e) => { e.stopPropagation(); toggleGoal(g.id); }}>
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                     <path d="M2 6L5 9L10 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </div>
-                <div className="goal-body">
+                <div className="goal-body" onClick={() => openEdit(g)}>
                   <div className="goal-title">{g.title}</div>
                   <div className="goal-meta">{g.due}</div>
                 </div>
@@ -460,14 +468,23 @@ function Goals() {
           </div>
         </>
       )}
+
+      <GoalModal open={modalOpen} onClose={() => setModalOpen(false)}
+        editing={editing} onAdd={addGoal} onEdit={editGoal} onDelete={removeGoal} />
     </div>
   );
 }
 
 // --- Plan (calendar) ---
 function Plan() {
-  const { plan: planState, togglePlan: togglePlanItem, runs } = useData();
+  const { plan: planState, togglePlan: togglePlanItem, runs, addPlan, editPlan, removePlan } = useData();
+  const [modalOpen, setModalOpen] = uS(false);
+  const [editing, setEditing] = uS(null);
+  const [prefilDate, setPrefilDate] = uS(null);
   const today = new Date();
+
+  const openNew = (date) => { setEditing(null); setPrefilDate(date || null); setModalOpen(true); };
+  const openEdit = (p) => { setEditing(p); setModalOpen(true); };
 
   // Build a 4-week grid starting from this week's Monday
   const startMonday = new Date(today);
@@ -498,7 +515,7 @@ function Plan() {
           <div className="sub">4-WEEK BLOCK · 10K BUILD · MAY 17</div>
         </div>
         <div className="right">
-          <button className="btn ghost">Edit plan</button>
+          <button className="btn" onClick={() => openNew()}>+ Plan workout</button>
         </div>
       </div>
 
@@ -519,13 +536,18 @@ function Plan() {
               return (
                 <div key={di}
                   className={`cal-cell ${isPast ? "past" : ""} ${isToday ? "today" : ""} ${hasWorkout ? "has-workout" : ""} ${isDone ? "done" : ""}`}
-                  onClick={() => day.planItem && togglePlanItem(day.planItem.id)}>
+                  onClick={(e) => {
+                    if (day.planItem) openEdit(day.planItem);
+                    else openNew(day.date);
+                  }}>
                   <div className="num">{day.date.getDate()}</div>
                   {isDone && <div className="dot" />}
                   {day.planItem && (
                     <div className="wk">
                       <span className={`type-badge ${day.planItem.type}`}>{day.planItem.type}</span>
-                      <div className="d">{day.planItem.distance}km · {day.planItem.desc}</div>
+                      <div className="d" onClick={(e) => { e.stopPropagation(); togglePlanItem(day.planItem.id); }}>
+                        {day.planItem.distance}km · {day.planItem.desc}
+                      </div>
                     </div>
                   )}
                   {day.completedRun && !day.planItem && (
@@ -548,49 +570,80 @@ function Plan() {
           </div>
         </div>
       ))}
+
+      <PlanModal open={modalOpen} onClose={() => setModalOpen(false)}
+        editing={editing} prefilDate={prefilDate}
+        onAdd={addPlan} onEdit={editPlan} onDelete={removePlan} />
     </div>
   );
 }
 
 // --- Profile ---
 function Profile() {
-  const { runs } = useData();
+  const { runs, profile, saveProfile } = useData();
   const totals = uM(() => computeTotals(runs), [runs]);
   const [achs, setAchs] = uS(ACHIEVEMENTS);
+  const [editing, setEditing] = uS(false);
+  const [form, setForm] = uS(profile);
+  uE(() => { setForm(profile); }, [profile]);
   const earned = achs.filter((a) => a.earned);
   const locked = achs.filter((a) => !a.earned);
+
+  const initials = (profile.name || "??")
+    .split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "??";
+
+  const save = async () => {
+    await saveProfile(form);
+    setEditing(false);
+  };
 
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h1>Profile</h1>
-          <div className="sub">MEMBER SINCE JAN 2024</div>
+          <div className="sub">MEMBER SINCE {(profile.memberSince || "").toUpperCase()}</div>
         </div>
       </div>
 
       <div className="profile-head">
-        <div className="avatar-xl">AX</div>
+        <div className="avatar-xl">{initials}</div>
         <div style={{ flex: 1 }}>
-          <h2>Alex Chen</h2>
-          <div className="sub">RUNNER · 10K SPECIALIST · EAST COAST</div>
-          <div style={{ display: "flex", gap: 16, marginTop: 12 }}>
-            <div>
-              <div className="mono" style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>5K PR</div>
-              <div className="display" style={{ fontSize: 20 }}>22:08</div>
-            </div>
-            <div>
-              <div className="mono" style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>10K PR</div>
-              <div className="display" style={{ fontSize: 20 }}>46:42</div>
-            </div>
-            <div>
-              <div className="mono" style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>HALF PR</div>
-              <div className="display" style={{ fontSize: 20, color: "var(--text-3)" }}>—</div>
-            </div>
-          </div>
+          {editing ? (
+            <>
+              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Your name"
+                style={{ ...inlineInput, fontSize: 28, fontFamily: "JetBrains Mono, monospace", fontWeight: 700, letterSpacing: "-0.03em", marginBottom: 6 }} />
+              <input value={form.tagline} onChange={(e) => setForm({ ...form, tagline: e.target.value })}
+                placeholder="RUNNER · 10K · EAST COAST"
+                style={{ ...inlineInput, fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "0.12em" }} />
+              <div style={{ display: "flex", gap: 16, marginTop: 12 }}>
+                <PRField label="5K PR" value={form.pr5k} onChange={(v) => setForm({ ...form, pr5k: v })} />
+                <PRField label="10K PR" value={form.pr10k} onChange={(v) => setForm({ ...form, pr10k: v })} />
+                <PRField label="HALF PR" value={form.prHalf} onChange={(v) => setForm({ ...form, prHalf: v })} />
+              </div>
+            </>
+          ) : (
+            <>
+              <h2>{profile.name}</h2>
+              <div className="sub">{profile.tagline}</div>
+              <div style={{ display: "flex", gap: 16, marginTop: 12 }}>
+                <PRDisplay label="5K PR" value={profile.pr5k} />
+                <PRDisplay label="10K PR" value={profile.pr10k} />
+                <PRDisplay label="HALF PR" value={profile.prHalf} />
+              </div>
+            </>
+          )}
         </div>
-        <div>
-          <button className="btn ghost">Edit profile</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {editing ? (
+            <>
+              <button className="btn ghost" onClick={() => { setForm(profile); setEditing(false); }}>Cancel</button>
+              <button className="btn" onClick={save}>Save</button>
+            </>
+          ) : (
+            <button className="btn ghost" onClick={() => setEditing(true)}>Edit profile</button>
+          )}
         </div>
       </div>
 
@@ -633,7 +686,7 @@ function Profile() {
 }
 
 // --- Run detail modal ---
-function RunDetail({ run, onClose }) {
+function RunDetail({ run, onClose, onEdit }) {
   if (!run) return null;
   return (
     <div style={{
@@ -656,7 +709,10 @@ function RunDetail({ run, onClose }) {
             </h2>
             <span className={`type-badge ${run.type}`}>{run.type}</span>
           </div>
-          <button className="chip" onClick={onClose}>ESC ✕</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {onEdit && <button className="chip" onClick={() => onEdit(run)}>✎ Edit</button>}
+            <button className="chip" onClick={onClose}>ESC ✕</button>
+          </div>
         </div>
 
         <div style={{ aspectRatio: "2.5", marginBottom: 20, borderRadius: 10, overflow: "hidden", background: "var(--bg-2)" }}>
@@ -682,11 +738,52 @@ function RunDetail({ run, onClose }) {
           </div>
         </div>
 
-        <div className="sect-title" style={{ margin: "0 0 12px" }}>
-          <h2>Splits</h2>
-          <div className="meta">{run.splits.length} KILOMETERS</div>
-        </div>
-        <SplitsChart splits={run.splits} />
+        {run.segments && run.segments.length > 0 && (
+          <>
+            <div className="sect-title" style={{ margin: "0 0 12px" }}>
+              <h2>Intervals</h2>
+              <div className="meta">{run.segments.length} SEGMENTS</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
+              <div style={{
+                display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 2fr",
+                gap: 12, padding: "8px 12px",
+                fontFamily: "JetBrains Mono, monospace", fontSize: 10,
+                color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em",
+                borderBottom: "1px solid var(--line)",
+              }}>
+                <div>#</div><div>Distance</div><div>Duration</div><div>Speed / Pace</div><div>Note</div>
+              </div>
+              {run.segments.map((s, i) => {
+                const speed = s.pace ? +(3600 / s.pace).toFixed(1) : 0;
+                return (
+                  <div key={i} style={{
+                    display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 2fr",
+                    gap: 12, padding: "10px 12px",
+                    background: "var(--bg-2)", borderRadius: 8,
+                    fontFamily: "JetBrains Mono, monospace", fontSize: 13,
+                  }}>
+                    <div style={{ color: "var(--text-3)" }}>{i + 1}</div>
+                    <div>{s.distance}<span style={{ color: "var(--text-3)" }}>km</span></div>
+                    <div>{formatDuration(s.duration)}</div>
+                    <div>{speed || "—"}<span style={{ color: "var(--text-3)", fontSize: 11 }}> km/h</span> <span style={{ color: "var(--text-3)" }}>· {secondsToPace(s.pace)}</span></div>
+                    <div style={{ color: "var(--text-2)" }}>{s.note || "—"}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {run.splits && run.splits.length > 0 && (
+          <>
+            <div className="sect-title" style={{ margin: "0 0 12px" }}>
+              <h2>Splits</h2>
+              <div className="meta">{run.splits.length} KILOMETERS</div>
+            </div>
+            <SplitsChart splits={run.splits} />
+          </>
+        )}
 
         <div className="grid g-3" style={{ marginTop: 20 }}>
           <div>
@@ -705,6 +802,38 @@ function RunDetail({ run, onClose }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+const inlineInput = {
+  background: "var(--bg-2)",
+  border: "1px solid var(--line)",
+  borderRadius: 6,
+  padding: "6px 10px",
+  color: "var(--text)",
+  outline: "none",
+  width: "100%",
+  maxWidth: 380,
+  display: "block",
+};
+
+function PRField({ label, value, onChange }) {
+  return (
+    <div>
+      <div className="mono" style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>{label}</div>
+      <input value={value || ""} onChange={(e) => onChange(e.target.value)}
+        placeholder="—"
+        style={{ ...inlineInput, fontFamily: "JetBrains Mono, monospace", fontSize: 18, fontWeight: 700, width: 90, marginTop: 4 }} />
+    </div>
+  );
+}
+
+function PRDisplay({ label, value }) {
+  return (
+    <div>
+      <div className="mono" style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>{label}</div>
+      <div className="display" style={{ fontSize: 20, color: value ? "var(--text)" : "var(--text-3)" }}>{value || "—"}</div>
     </div>
   );
 }

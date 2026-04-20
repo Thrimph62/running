@@ -13,6 +13,7 @@ create table if not exists public.runs (
   hr integer default 0,
   cadence integer default 0,
   splits jsonb default '[]'::jsonb, -- array of seconds-per-km
+  segments jsonb default '[]'::jsonb, -- array of {distance, duration, pace, note}
   feel integer default 3,
   vibe text default 'flat',
   created_at timestamptz default now()
@@ -60,6 +61,30 @@ create policy "public read goals" on public.goals for select using (true);
 create policy "public write goals" on public.goals for all   using (true) with check (true);
 create policy "public read plan"  on public.plan  for select using (true);
 create policy "public write plan" on public.plan  for all    using (true) with check (true);
+
+-- Profile (single-row table for the owner's profile)
+create table if not exists public.profile (
+  id integer primary key default 1,
+  name text default 'Your name',
+  tagline text default 'RUNNER',
+  pr_5k text,
+  pr_10k text,
+  pr_half text,
+  member_since text default 'Jan 2024',
+  updated_at timestamptz default now(),
+  constraint single_row check (id = 1)
+);
+
+alter table public.profile enable row level security;
+drop policy if exists "public read profile" on public.profile;
+drop policy if exists "public write profile" on public.profile;
+create policy "public read profile"  on public.profile for select using (true);
+create policy "public write profile" on public.profile for all    using (true) with check (true);
+
+insert into public.profile (id) values (1) on conflict do nothing;
+
+-- If you ran the original schema before segments was added, run:
+-- alter table public.runs add column if not exists segments jsonb default '[]'::jsonb;
 
 -- Seed a few starter goals
 insert into public.goals (title, target, current, unit, due, done) values

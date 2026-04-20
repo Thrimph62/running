@@ -12,10 +12,19 @@ function DataProvider({ children }) {
   const [runs, setRuns] = React.useState([]);
   const [goals, setGoals] = React.useState(GOALS);
   const [plan, setPlan] = React.useState(PLAN);
+  const [profile, setProfile] = React.useState({
+    name: "Your name", tagline: "RUNNER", pr5k: "", pr10k: "", prHalf: "", memberSince: "Jan 2024",
+  });
   const [configOpen, setConfigOpen] = React.useState(false);
+
+  const LS_PROFILE = "pacelog-profile";
 
   const reload = React.useCallback(async () => {
     const ok = await initSupabase();
+    const localProfile = localStorage.getItem(LS_PROFILE);
+    if (localProfile) {
+      try { setProfile(JSON.parse(localProfile)); } catch {}
+    }
     if (!ok) {
       setMode("seed");
       setRuns(RUNS);
@@ -23,12 +32,19 @@ function DataProvider({ children }) {
       setPlan(PLAN);
       return;
     }
-    const [r, g, p] = await Promise.all([fetchRuns(), fetchGoals(), fetchPlan()]);
+    const [r, g, p, pr] = await Promise.all([fetchRuns(), fetchGoals(), fetchPlan(), fetchProfile()]);
     setRuns(r && r.length ? r : RUNS);
     setGoals(g && g.length ? g : GOALS);
     setPlan(p && p.length ? p : PLAN);
+    if (pr) setProfile(pr);
     setMode("supabase");
   }, []);
+
+  const saveProfile = async (p) => {
+    setProfile(p);
+    localStorage.setItem(LS_PROFILE, JSON.stringify(p));
+    if (mode === "supabase") await updateProfile(p);
+  };
 
   React.useEffect(() => { reload(); }, [reload]);
 
@@ -42,11 +58,61 @@ function DataProvider({ children }) {
     }
   };
 
+  const editRun = async (id, run) => {
+    if (mode === "supabase") {
+      await updateRun(id, run);
+      const fresh = await fetchRuns();
+      if (fresh) setRuns(fresh);
+    } else {
+      setRuns((rs) => rs.map((r) => r.id === id ? { ...r, ...run, paceStr: secondsToPace(run.pace) } : r));
+    }
+  };
+
+  const removeRun = async (id) => {
+    if (mode === "supabase") {
+      await deleteRun(id);
+      const fresh = await fetchRuns();
+      if (fresh) setRuns(fresh);
+    } else {
+      setRuns((rs) => rs.filter((r) => r.id !== id));
+    }
+  };
+
   const toggleGoal = async (id) => {
     setGoals((gs) => gs.map((x) => x.id === id ? { ...x, done: !x.done } : x));
     if (mode === "supabase") {
       const g = goals.find((x) => x.id === id);
       if (g) await updateGoalDone(id, !g.done);
+    }
+  };
+
+  const addGoal = async (g) => {
+    if (mode === "supabase") {
+      await insertGoal(g);
+      const fresh = await fetchGoals();
+      if (fresh) setGoals(fresh);
+    } else {
+      setGoals((gs) => [...gs, { ...g, id: `local-g-${Date.now()}`, done: !!g.done, current: g.current || 0 }]);
+    }
+  };
+
+  const editGoal = async (id, g) => {
+    if (mode === "supabase") {
+      await updateGoal(id, g);
+      const fresh = await fetchGoals();
+      if (fresh) setGoals(fresh);
+    } else {
+      setGoals((gs) => gs.map((x) => x.id === id ? { ...x, ...g } : x));
+    }
+  };
+
+  const removeGoal = async (id) => {
+    if (mode === "supabase") {
+      await deleteGoal(id);
+      const fresh = await fetchGoals();
+      if (fresh) setGoals(fresh);
+    } else {
+      setGoals((gs) => gs.filter((x) => x.id !== id));
     }
   };
 
@@ -58,8 +124,55 @@ function DataProvider({ children }) {
     }
   };
 
+  const addPlan = async (p) => {
+    if (mode === "supabase") {
+      await insertPlan(p);
+      const fresh = await fetchPlan();
+      if (fresh) setPlan(fresh);
+    } else {
+      setPlan((ps) => [...ps, { ...p, id: `local-p-${Date.now()}`, done: !!p.done }]);
+    }
+  };
+
+  const editPlan = async (id, p) => {
+    if (mode === "supabase") {
+      await updatePlan(id, p);
+      const fresh = await fetchPlan();
+      if (fresh) setPlan(fresh);
+    } else {
+      setPlan((ps) => ps.map((x) => x.id === id ? { ...x, ...p } : x));
+    }
+  };
+
+  const resetAll = async () => {
+    await wipeAllData();
+    setRuns([]);
+    setGoals([]);
+    setPlan([]);
+    setProfile({
+      name: "Your name", tagline: "RUNNER",
+      pr5k: "", pr10k: "", prHalf: "", memberSince: "Jan 2024",
+    });
+  };
+
+  const removePlan = async (id) => {
+    if (mode === "supabase") {
+      await deletePlan(id);
+      const fresh = await fetchPlan();
+      if (fresh) setPlan(fresh);
+    } else {
+      setPlan((ps) => ps.filter((x) => x.id !== id));
+    }
+  };
+
   return (
-    <DataCtx.Provider value={{ mode, runs, goals, plan, addRun, toggleGoal, togglePlan, reload, configOpen, setConfigOpen }}>
+    <DataCtx.Provider value={{
+      mode, runs, goals, plan, profile, saveProfile,
+      addRun, editRun, removeRun,
+      toggleGoal, addGoal, editGoal, removeGoal,
+      togglePlan, addPlan, editPlan, removePlan,
+      reload, resetAll, configOpen, setConfigOpen,
+    }}>
       {children}
     </DataCtx.Provider>
   );
@@ -67,10 +180,12 @@ function DataProvider({ children }) {
 
 // --- Config panel: paste Supabase URL + anon key ---
 function ConfigPanel({ open, onClose, onSaved }) {
+  const { resetAll } = useData();
   const initial = getSupabaseConfig();
   const [url, setUrl] = React.useState(initial.url);
   const [key, setKey] = React.useState(initial.key);
   const [status, setStatus] = React.useState("");
+  const [wiping, setWiping] = React.useState(false);
 
   if (!open) return null;
 
@@ -84,6 +199,17 @@ function ConfigPanel({ open, onClose, onSaved }) {
     } else {
       setStatus("Could not connect. Check the URL and key.");
     }
+  };
+
+  const handleWipe = async () => {
+    const msg = "Erase ALL runs, goals, plan items, and profile info?\n\nThis cannot be undone. If you're connected to Supabase, rows will be deleted there too.";
+    if (!confirm(msg)) return;
+    setWiping(true);
+    setStatus("Erasing everything…");
+    await resetAll();
+    setStatus("All data cleared. Starting fresh.");
+    setWiping(false);
+    setTimeout(() => { onClose(); }, 600);
   };
 
   const disconnect = () => {
@@ -134,10 +260,15 @@ function ConfigPanel({ open, onClose, onSaved }) {
           <div className="mono" style={{ fontSize: 12, color: "var(--text-2)", marginTop: 12 }}>{status}</div>
         )}
 
-        <div style={{ display: "flex", gap: 8, marginTop: 20, justifyContent: "flex-end" }}>
-          <button className="btn ghost" onClick={disconnect}>Disconnect</button>
-          <button className="btn ghost" onClick={onClose}>Cancel</button>
-          <button className="btn" onClick={save}>Save & connect</button>
+        <div style={{ display: "flex", gap: 8, marginTop: 20, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
+          <button className="btn ghost" style={{ color: "var(--danger)" }} onClick={handleWipe} disabled={wiping}>
+            {wiping ? "Erasing…" : "Start fresh — erase all data"}
+          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn ghost" onClick={disconnect}>Disconnect</button>
+            <button className="btn ghost" onClick={onClose}>Cancel</button>
+            <button className="btn" onClick={save}>Save & connect</button>
+          </div>
         </div>
       </div>
     </div>
@@ -156,8 +287,48 @@ const inputStyle = {
   outline: "none",
 };
 
-// --- Add run form ---
-function AddRunModal({ open, onClose, onAdd }) {
+// --- Segment helpers ---
+function parseDurationStr(s) {
+  if (!s) return 0;
+  const parts = String(s).trim().split(":").map(Number);
+  if (parts.some(isNaN)) return 0;
+  if (parts.length === 1) return parts[0]; // seconds
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return 0;
+}
+
+function formatDurationStr(sec) {
+  if (!sec) return "";
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function segmentTotals(segments) {
+  let dist = 0, dur = 0;
+  for (const s of segments) {
+    const d = parseFloat(s.distance) || 0;
+    const t = parseDurationStr(s.duration);
+    dist += d; dur += t;
+  }
+  return {
+    distance: +dist.toFixed(2),
+    duration: dur,
+    pace: dist > 0 ? Math.round(dur / dist) : 0,
+  };
+}
+
+function paceToSpeed(paceSecPerKm) {
+  if (!paceSecPerKm) return 0;
+  return +(3600 / paceSecPerKm).toFixed(1);
+}
+
+// --- Add/edit run form ---
+function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
+  const isEdit = !!editing;
   const [form, setForm] = React.useState({
     date: new Date().toISOString().slice(0, 10),
     type: "Easy",
@@ -168,20 +339,75 @@ function AddRunModal({ open, onClose, onAdd }) {
     hr: "",
     cadence: "",
     feel: 3,
+    segments: [],
   });
+
+  React.useEffect(() => {
+    if (editing) {
+      setForm({
+        date: editing.date.toISOString().slice(0, 10),
+        type: editing.type,
+        routeName: editing.routeName,
+        distance: String(editing.distance),
+        duration: formatDurationStr(editing.duration),
+        elevation: String(editing.elevation || ""),
+        hr: String(editing.hr || ""),
+        cadence: String(editing.cadence || ""),
+        feel: editing.feel || 3,
+        segments: (editing.segments || []).map((s) => ({
+          distance: String(s.distance || ""),
+          duration: formatDurationStr(s.duration || 0),
+          note: s.note || "",
+        })),
+      });
+    } else if (open) {
+      setForm({
+        date: new Date().toISOString().slice(0, 10),
+        type: "Easy", routeName: "", distance: "", duration: "",
+        elevation: "", hr: "", cadence: "", feel: 3, segments: [],
+      });
+    }
+  }, [editing, open]);
 
   if (!open) return null;
 
   const upd = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
+  const hasSegments = form.segments.length > 0;
+  const segTotals = hasSegments ? segmentTotals(form.segments) : null;
+
+  const addSegment = () => setForm((f) => ({
+    ...f,
+    segments: [...f.segments, { distance: "", duration: "", note: "" }],
+  }));
+  const removeSegment = (i) => setForm((f) => ({
+    ...f,
+    segments: f.segments.filter((_, idx) => idx !== i),
+  }));
+  const updSegment = (i, k, v) => setForm((f) => ({
+    ...f,
+    segments: f.segments.map((s, idx) => idx === i ? { ...s, [k]: v } : s),
+  }));
+
   const submit = async (e) => {
     e.preventDefault();
-    const dist = parseFloat(form.distance);
-    // Parse mm:ss or hh:mm:ss
-    const parts = form.duration.split(":").map(Number);
-    let dur = 0;
-    if (parts.length === 2) dur = parts[0] * 60 + parts[1];
-    else if (parts.length === 3) dur = parts[0] * 3600 + parts[1] * 60 + parts[2];
+    let dist, dur, segments = [];
+    if (hasSegments) {
+      segments = form.segments
+        .map((s) => ({
+          distance: parseFloat(s.distance) || 0,
+          duration: parseDurationStr(s.duration),
+          note: s.note || "",
+        }))
+        .filter((s) => s.distance > 0 && s.duration > 0)
+        .map((s) => ({ ...s, pace: Math.round(s.duration / s.distance) }));
+      if (segments.length === 0) return;
+      const t = segmentTotals(segments.map((s) => ({ distance: s.distance, duration: s.duration })));
+      dist = t.distance; dur = t.duration;
+    } else {
+      dist = parseFloat(form.distance);
+      dur = parseDurationStr(form.duration);
+    }
     if (!dist || !dur || !form.routeName) return;
     const pace = Math.round(dur / dist);
     const run = {
@@ -194,11 +420,20 @@ function AddRunModal({ open, onClose, onAdd }) {
       elevation: parseInt(form.elevation) || 0,
       hr: parseInt(form.hr) || 0,
       cadence: parseInt(form.cadence) || 0,
-      splits: [],
+      splits: editing?.splits || [],
+      segments,
       feel: form.feel,
-      vibe: "flat",
+      vibe: editing?.vibe || "flat",
     };
-    await onAdd(run);
+    if (isEdit) await onEdit(editing.id, run);
+    else await onAdd(run);
+    onClose();
+  };
+
+  const handleDelete = async () => {
+    if (!editing) return;
+    if (!confirm(`Delete "${editing.routeName}" on ${editing.date.toLocaleDateString()}?`)) return;
+    await onDelete(editing.id);
     onClose();
   };
 
@@ -209,13 +444,15 @@ function AddRunModal({ open, onClose, onAdd }) {
       zIndex: 300,
     }} onClick={onClose}>
       <form onSubmit={submit} style={{
-        width: 560, maxWidth: "92vw",
+        width: 640, maxWidth: "92vw", maxHeight: "90vh", overflow: "auto",
         background: "var(--bg-1)", border: "1px solid var(--line)",
         borderRadius: 16, padding: 32,
       }} onClick={(e) => e.stopPropagation()}>
-        <div className="mono" style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>New run</div>
+        <div className="mono" style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+          {isEdit ? "Edit run" : "New run"}
+        </div>
         <h2 style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 26, letterSpacing: "-0.03em", margin: "6px 0 20px" }}>
-          Log a run
+          {isEdit ? "Edit run" : "Log a run"}
         </h2>
 
         <div className="grid g-2" style={{ gap: 12 }}>
@@ -230,12 +467,16 @@ function AddRunModal({ open, onClose, onAdd }) {
           <Field label="Route name" span>
             <input value={form.routeName} onChange={(e) => upd("routeName", e.target.value)} placeholder="Riverside Loop" style={inputStyle} />
           </Field>
-          <Field label="Distance (km)">
-            <input value={form.distance} onChange={(e) => upd("distance", e.target.value)} placeholder="5.2" style={inputStyle} />
-          </Field>
-          <Field label="Duration (mm:ss)">
-            <input value={form.duration} onChange={(e) => upd("duration", e.target.value)} placeholder="26:30" style={inputStyle} />
-          </Field>
+          {!hasSegments && (
+            <>
+              <Field label="Distance (km)">
+                <input value={form.distance} onChange={(e) => upd("distance", e.target.value)} placeholder="5.2" style={inputStyle} />
+              </Field>
+              <Field label="Duration (mm:ss)">
+                <input value={form.duration} onChange={(e) => upd("duration", e.target.value)} placeholder="26:30" style={inputStyle} />
+              </Field>
+            </>
+          )}
           <Field label="Elevation (m)">
             <input value={form.elevation} onChange={(e) => upd("elevation", e.target.value)} placeholder="34" style={inputStyle} />
           </Field>
@@ -250,9 +491,276 @@ function AddRunModal({ open, onClose, onAdd }) {
           </Field>
         </div>
 
-        <div style={{ display: "flex", gap: 8, marginTop: 24, justifyContent: "flex-end" }}>
-          <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn">Save run</button>
+        <div style={{
+          marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--line)",
+        }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
+            <div>
+              <div className="mono" style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+                Intervals
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2 }}>
+                Break the run into segments — e.g. 1km @ 8 km/h, then 45s @ 10 km/h. Totals auto-compute.
+              </div>
+            </div>
+            <button type="button" className="btn ghost" onClick={addSegment}>+ Add segment</button>
+          </div>
+
+          {hasSegments && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "28px 1fr 1fr 90px 1.2fr 28px",
+                gap: 8, alignItems: "center",
+                fontFamily: "JetBrains Mono, monospace", fontSize: 10,
+                color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em",
+                padding: "0 4px",
+              }}>
+                <div>#</div>
+                <div>Distance (km)</div>
+                <div>Duration (mm:ss)</div>
+                <div>Speed</div>
+                <div>Note</div>
+                <div />
+              </div>
+              {form.segments.map((s, i) => {
+                const d = parseFloat(s.distance) || 0;
+                const t = parseDurationStr(s.duration);
+                const speed = d && t ? +(d / (t / 3600)).toFixed(1) : 0;
+                return (
+                  <div key={i} style={{
+                    display: "grid",
+                    gridTemplateColumns: "28px 1fr 1fr 90px 1.2fr 28px",
+                    gap: 8, alignItems: "center",
+                  }}>
+                    <div className="mono" style={{ fontSize: 12, color: "var(--text-3)" }}>{i + 1}</div>
+                    <input value={s.distance} onChange={(e) => updSegment(i, "distance", e.target.value)}
+                      placeholder="1.0" style={inputStyle} />
+                    <input value={s.duration} onChange={(e) => updSegment(i, "duration", e.target.value)}
+                      placeholder="7:30" style={inputStyle} />
+                    <div className="mono" style={{ fontSize: 12, color: speed ? "var(--text)" : "var(--text-3)" }}>
+                      {speed ? `${speed} km/h` : "—"}
+                    </div>
+                    <input value={s.note} onChange={(e) => updSegment(i, "note", e.target.value)}
+                      placeholder="warmup / tempo / rest" style={inputStyle} />
+                    <button type="button" onClick={() => removeSegment(i)}
+                      style={{
+                        background: "transparent", border: "1px solid var(--line)", color: "var(--text-3)",
+                        borderRadius: 6, height: 32, cursor: "pointer", padding: 0,
+                      }}>×</button>
+                  </div>
+                );
+              })}
+              <div style={{
+                display: "flex", gap: 20, padding: "10px 4px 0",
+                borderTop: "1px dashed var(--line)", marginTop: 4,
+                fontFamily: "JetBrains Mono, monospace", fontSize: 12,
+              }}>
+                <div><span style={{ color: "var(--text-3)" }}>TOTAL</span> {segTotals.distance}km</div>
+                <div><span style={{ color: "var(--text-3)" }}>TIME</span> {formatDurationStr(segTotals.duration)}</div>
+                <div><span style={{ color: "var(--text-3)" }}>AVG PACE</span> {segTotals.pace ? secondsToPace(segTotals.pace) + "/km" : "—"}</div>
+                <div><span style={{ color: "var(--text-3)" }}>AVG SPEED</span> {segTotals.pace ? paceToSpeed(segTotals.pace) + " km/h" : "—"}</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 24, justifyContent: "space-between" }}>
+          {isEdit ? (
+            <button type="button" className="btn ghost" style={{ color: "var(--danger)" }} onClick={handleDelete}>Delete run</button>
+          ) : <div />}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn">{isEdit ? "Save changes" : "Save run"}</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// --- Goal form ---
+function GoalModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
+  const isEdit = !!editing;
+  const [form, setForm] = React.useState({
+    title: "", target: "", current: "", unit: "km", due: "", done: false,
+  });
+
+  React.useEffect(() => {
+    if (editing) setForm({
+      title: editing.title, target: String(editing.target),
+      current: String(editing.current), unit: editing.unit || "km",
+      due: editing.due || "", done: !!editing.done,
+    });
+    else if (open) setForm({ title: "", target: "", current: "", unit: "km", due: "", done: false });
+  }, [editing, open]);
+
+  if (!open) return null;
+
+  const upd = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.title || !form.target) return;
+    const goal = {
+      title: form.title,
+      target: parseFloat(form.target) || 0,
+      current: parseFloat(form.current) || 0,
+      unit: form.unit,
+      due: form.due,
+      done: form.done,
+    };
+    if (isEdit) await onEdit(editing.id, goal);
+    else await onAdd(goal);
+    onClose();
+  };
+
+  const handleDelete = async () => {
+    if (!editing) return;
+    if (!confirm(`Delete "${editing.title}"?`)) return;
+    await onDelete(editing.id);
+    onClose();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }} onClick={onClose}>
+      <form onSubmit={submit} style={{
+        width: 500, maxWidth: "92vw",
+        background: "var(--bg-1)", border: "1px solid var(--line)",
+        borderRadius: 16, padding: 32,
+      }} onClick={(e) => e.stopPropagation()}>
+        <div className="mono" style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+          {isEdit ? "Edit goal" : "New goal"}
+        </div>
+        <h2 style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 26, letterSpacing: "-0.03em", margin: "6px 0 20px" }}>
+          {isEdit ? "Edit goal" : "New goal"}
+        </h2>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Field label="Title">
+            <input value={form.title} onChange={(e) => upd("title", e.target.value)} placeholder="Run 150km this month" style={inputStyle} />
+          </Field>
+          <div className="grid g-3" style={{ gap: 12 }}>
+            <Field label="Target">
+              <input value={form.target} onChange={(e) => upd("target", e.target.value)} placeholder="150" style={inputStyle} />
+            </Field>
+            <Field label="Current">
+              <input value={form.current} onChange={(e) => upd("current", e.target.value)} placeholder="0" style={inputStyle} />
+            </Field>
+            <Field label="Unit">
+              <select value={form.unit} onChange={(e) => upd("unit", e.target.value)} style={inputStyle}>
+                {["km", "min", "runs", "weeks", "days"].map((u) => <option key={u}>{u}</option>)}
+              </select>
+            </Field>
+          </div>
+          <Field label="Due">
+            <input value={form.due} onChange={(e) => upd("due", e.target.value)} placeholder="April 30" style={inputStyle} />
+          </Field>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 24, justifyContent: "space-between" }}>
+          {isEdit ? (
+            <button type="button" className="btn ghost" style={{ color: "var(--danger)" }} onClick={handleDelete}>Delete goal</button>
+          ) : <div />}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn">{isEdit ? "Save changes" : "Add goal"}</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// --- Plan item form ---
+function PlanModal({ open, onClose, onAdd, onEdit, onDelete, editing, prefilDate }) {
+  const isEdit = !!editing;
+  const [form, setForm] = React.useState({
+    date: new Date().toISOString().slice(0, 10),
+    type: "Easy", distance: "", desc: "", done: false,
+  });
+
+  React.useEffect(() => {
+    if (editing) setForm({
+      date: editing.date.toISOString().slice(0, 10),
+      type: editing.type, distance: String(editing.distance),
+      desc: editing.desc || "", done: !!editing.done,
+    });
+    else if (open) setForm({
+      date: (prefilDate || new Date()).toISOString().slice(0, 10),
+      type: "Easy", distance: "", desc: "", done: false,
+    });
+  }, [editing, open, prefilDate]);
+
+  if (!open) return null;
+
+  const upd = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.distance) return;
+    const p = {
+      date: new Date(form.date),
+      type: form.type,
+      distance: parseFloat(form.distance) || 0,
+      desc: form.desc,
+      done: form.done,
+    };
+    if (isEdit) await onEdit(editing.id, p);
+    else await onAdd(p);
+    onClose();
+  };
+
+  const handleDelete = async () => {
+    if (!editing) return;
+    if (!confirm("Delete this planned workout?")) return;
+    await onDelete(editing.id);
+    onClose();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }} onClick={onClose}>
+      <form onSubmit={submit} style={{
+        width: 500, maxWidth: "92vw",
+        background: "var(--bg-1)", border: "1px solid var(--line)",
+        borderRadius: 16, padding: 32,
+      }} onClick={(e) => e.stopPropagation()}>
+        <div className="mono" style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+          {isEdit ? "Edit planned workout" : "New planned workout"}
+        </div>
+        <h2 style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 26, letterSpacing: "-0.03em", margin: "6px 0 20px" }}>
+          {isEdit ? "Edit workout" : "Plan workout"}
+        </h2>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="grid g-2" style={{ gap: 12 }}>
+            <Field label="Date">
+              <input type="date" value={form.date} onChange={(e) => upd("date", e.target.value)} style={inputStyle} />
+            </Field>
+            <Field label="Type">
+              <select value={form.type} onChange={(e) => upd("type", e.target.value)} style={inputStyle}>
+                {["Easy", "Tempo", "Long", "Intervals", "Recovery", "Race"].map((t) => <option key={t}>{t}</option>)}
+              </select>
+            </Field>
+          </div>
+          <Field label="Distance (km)">
+            <input value={form.distance} onChange={(e) => upd("distance", e.target.value)} placeholder="8" style={inputStyle} />
+          </Field>
+          <Field label="Description">
+            <input value={form.desc} onChange={(e) => upd("desc", e.target.value)} placeholder="6×800m @ 5K pace" style={inputStyle} />
+          </Field>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 24, justifyContent: "space-between" }}>
+          {isEdit ? (
+            <button type="button" className="btn ghost" style={{ color: "var(--danger)" }} onClick={handleDelete}>Delete</button>
+          ) : <div />}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn">{isEdit ? "Save changes" : "Add workout"}</button>
+          </div>
         </div>
       </form>
     </div>
@@ -268,4 +776,4 @@ function Field({ label, children, span }) {
   );
 }
 
-Object.assign(window, { DataCtx, DataProvider, useData, ConfigPanel, AddRunModal });
+Object.assign(window, { DataCtx, DataProvider, useData, ConfigPanel, AddRunModal, GoalModal, PlanModal });
