@@ -1,11 +1,11 @@
 const { useState: uSS, useEffect: uEE } = React;
 
 const TABS = [
-  { id: "home", label: "Home", key: "1" },
-  { id: "history", label: "History", key: "2" },
-  { id: "stats", label: "Stats & trends", key: "3" },
-  { id: "goals", label: "Personal records", key: "4" },
-  { id: "profile", label: "Profile", key: "5" },
+  { id: "home",    label: "Home",            key: "1" },
+  { id: "history", label: "History",          key: "2" },
+  { id: "stats",   label: "Stats & trends",   key: "3" },
+  { id: "records", label: "Personal records", key: "4" },
+  { id: "profile", label: "Profile",          key: "5" },
 ];
 
 const ACCENT_PRESETS = [
@@ -165,7 +165,7 @@ function Shell() {
   else if (tab === "home") content = <Home onOpenRun={setOpenRun} onAddRun={() => setAddOpen(true)} />;
   else if (tab === "history") content = <History onOpenRun={setOpenRun} />;
   else if (tab === "stats") content = <Stats />;
-  else if (tab === "goals") content = <PersonalRecords />;
+  else if (tab === "records") content = <PersonalRecords />;
   else if (tab === "profile") content = <Profile />;
 
   return (

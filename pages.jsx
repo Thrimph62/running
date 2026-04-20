@@ -26,10 +26,7 @@ function RunRow({ run, onClick }) {
       </div>
       <div className="metric">{run.distance}<span className="u">km</span></div>
       <div className="metric">{formatDuration(run.duration)}</div>
-      <div className="metric">
-        <div>{(3600 / run.pace).toFixed(1)}<span className="u">km/h</span></div>
-        <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 2 }}>{run.paceStr}/km</div>
-      </div>
+      <div className="metric">{run.paceStr}<span className="u">/km</span></div>
       <div style={{ width: 80, height: 40 }}>
         <Sparkline values={run.splits} />
       </div>
@@ -76,61 +73,53 @@ function computeTotals(runs) {
 // --- Home ---
 function Home({ onOpenRun, onAddRun }) {
   const { runs, profile } = useData();
-  const weekly = uM(() => computeWeekly(runs), [runs]);
-  const recent = runs.slice(0, 5);
-
-  // Current Mon–Sun week
   const now = new Date();
-  const weekStart = uM(() => {
-    const d = new Date(now);
-    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, []);
-  const prevWeekStart = uM(() => {
-    const d = new Date(weekStart);
-    d.setDate(d.getDate() - 7);
-    return d;
-  }, [weekStart]);
 
-  const thisWeekRuns = uM(() => runs.filter((r) => r.date >= weekStart), [runs, weekStart]);
-  const lastWeekRuns = uM(() => runs.filter((r) => r.date >= prevWeekStart && r.date < weekStart), [runs, prevWeekStart, weekStart]);
+  // Week boundaries — always Monday 00:00 → Sunday 23:59
+  const getMondayOf = (d) => {
+    const m = new Date(d);
+    m.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    m.setHours(0, 0, 0, 0);
+    return m;
+  };
+  const thisMonday  = getMondayOf(now);
+  const lastMonday  = new Date(thisMonday); lastMonday.setDate(thisMonday.getDate() - 7);
+  const lastSunday  = new Date(thisMonday); lastSunday.setTime(thisMonday.getTime() - 1);
 
-  const thisWeek = uM(() => ({
-    distance: +thisWeekRuns.reduce((a, r) => a + r.distance, 0).toFixed(1),
-    runs: thisWeekRuns.length,
-    avgPace: thisWeekRuns.length ? Math.round(thisWeekRuns.reduce((a, r) => a + r.pace, 0) / thisWeekRuns.length) : 0,
-  }), [thisWeekRuns]);
+  const thisWeekRuns = runs.filter((r) => r.date >= thisMonday);
+  const lastWeekRuns = runs.filter((r) => r.date >= lastMonday && r.date <= lastSunday);
 
-  const lastWeek = uM(() => ({
-    distance: +lastWeekRuns.reduce((a, r) => a + r.distance, 0).toFixed(1),
-    avgPace: lastWeekRuns.length ? Math.round(lastWeekRuns.reduce((a, r) => a + r.pace, 0) / lastWeekRuns.length) : 0,
-  }), [lastWeekRuns]);
+  const summarise = (rs) => ({
+    distance: +rs.reduce((a, r) => a + r.distance, 0).toFixed(1),
+    runs:     rs.length,
+    avgPace:  rs.length ? Math.round(rs.reduce((a, r) => a + r.pace, 0) / rs.length) : 0,
+  });
+  const thisWeek = summarise(thisWeekRuns);
+  const lastWeek = summarise(lastWeekRuns);
 
-  const deltaDist = +(thisWeek.distance - lastWeek.distance).toFixed(1);
-  const deltaSpeed = thisWeek.avgPace && lastWeek.avgPace
-    ? +((3600 / thisWeek.avgPace) - (3600 / lastWeek.avgPace)).toFixed(1) : 0;
+  const thisSpeed  = thisWeek.avgPace ? +(3600 / thisWeek.avgPace).toFixed(1) : 0;
+  const lastSpeed  = lastWeek.avgPace ? +(3600 / lastWeek.avgPace).toFixed(1) : 0;
+  const deltaDist  = +(thisWeek.distance - lastWeek.distance).toFixed(1);
+  const deltaSpeed = +(thisSpeed - lastSpeed).toFixed(1);
 
+  const weekly = uM(() => computeWeekly(runs), [runs]);
   const monthDist = runs
     .filter((r) => r.date.getMonth() === now.getMonth() && r.date.getFullYear() === now.getFullYear())
     .reduce((a, r) => a + r.distance, 0);
 
-  // Streak: consecutive weeks (ending this week) with ≥ 2 runs
   const streak = uM(() => {
     let s = 0;
     for (let i = weekly.length - 1; i >= 0; i--) {
-      if (weekly[i].runs >= 2) s++;
-      else break;
+      if (weekly[i].runs >= 2) s++; else break;
     }
     return s;
   }, [weekly]);
 
-  const hour = now.getHours();
-  const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const recent   = runs.slice(0, 5);
+  const hour     = now.getHours();
+  const greet    = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const firstName = (profile?.name || "").trim().split(/\s+/)[0] || "";
-  const todayStr = now.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric" }).toUpperCase();
-
-  const thisSpeed = thisWeek.avgPace ? (3600 / thisWeek.avgPace).toFixed(1) : "—";
+  const todayStr  = now.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric" }).toUpperCase();
 
   return (
     <div className="page">
@@ -149,19 +138,24 @@ function Home({ onOpenRun, onAddRun }) {
           <div className="label">This week</div>
           <div className="big">{thisWeek.distance}<span className="unit">km</span></div>
           <div className="delta">
-            {deltaDist >= 0 ? "↑" : "↓"} {Math.abs(deltaDist)}km vs last week
+            {lastWeek.runs > 0
+              ? `${deltaDist >= 0 ? "↑" : "↓"} ${Math.abs(deltaDist)}km vs last week`
+              : "no runs last week"}
           </div>
         </div>
         <div className="stat">
           <div className="label">Avg speed · week</div>
-          <div className="big">{thisSpeed}<span className="unit">km/h</span></div>
-          <div className={`delta ${deltaSpeed > 0 ? "up" : deltaSpeed < 0 ? "down" : ""}`}>
-            {deltaSpeed > 0 ? "↑" : deltaSpeed < 0 ? "↓" : "—"} {Math.abs(deltaSpeed)} km/h vs last week
+          <div className="big">{thisSpeed || "—"}<span className="unit">km/h</span></div>
+          <div className={`delta ${deltaSpeed >= 0 ? "up" : "down"}`}>
+            {lastWeek.runs > 0
+              ? `${deltaSpeed >= 0 ? "↑" : "↓"} ${Math.abs(deltaSpeed)} km/h vs last week`
+              : "no runs last week"}
           </div>
         </div>
         <div className="stat">
           <div className="label">This month</div>
           <div className="big">{monthDist.toFixed(1)}<span className="unit">km</span></div>
+          <div className="delta">{now.toLocaleDateString("en", { month: "long" })}</div>
         </div>
         <div className="stat">
           <div className="label">Runs this week</div>
@@ -252,7 +246,7 @@ function History({ onOpenRun }) {
           letterSpacing: "0.12em",
           color: "var(--text-3)",
         }}>
-          <div>Date</div><div>Route</div><div>Distance</div><div>Duration</div><div>Speed / Pace</div><div>Splits</div>
+          <div>Date</div><div>Route</div><div>Distance</div><div>Duration</div><div>Pace</div><div>Splits</div>
         </div>
         {sorted.map((r) => <RunRow key={r.id} run={r} onClick={() => onOpenRun(r)} />)}
       </div>
@@ -422,6 +416,7 @@ function Stats() {
   );
 }
 
+
 // --- Personal Records ---
 const PR_CATEGORIES = ["5K", "10K", "Half Marathon", "Marathon", "Other"];
 
@@ -475,7 +470,7 @@ function PRModal({ open, onClose, onSave, onDelete, editing }) {
             <label>
               <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>Result</div>
               <input value={form.result} onChange={(e) => setForm((f) => ({ ...f, result: e.target.value }))}
-                placeholder="22:45 or 42.2km" style={s} autoFocus />
+                placeholder="22:45 or 3:52:14" style={s} autoFocus />
             </label>
           </div>
           <label>
@@ -509,17 +504,13 @@ function PersonalRecords() {
   const [editing, setEditing] = uS(null);
 
   const records = profile.personalRecords || [];
-
   const openNew = () => { setEditing(null); setModalOpen(true); };
   const openEdit = (r) => { setEditing(r); setModalOpen(true); };
 
   const saveRecord = async (rec) => {
-    let updated;
-    if (editing) {
-      updated = records.map((r) => r.id === editing.id ? { ...r, ...rec } : r);
-    } else {
-      updated = [...records, { ...rec, id: `pr-${Date.now()}` }];
-    }
+    const updated = editing
+      ? records.map((r) => r.id === editing.id ? { ...r, ...rec } : r)
+      : [...records, { ...rec, id: `pr-${Date.now()}` }];
     await saveProfile({ ...profile, personalRecords: updated });
   };
 
@@ -527,14 +518,11 @@ function PersonalRecords() {
     await saveProfile({ ...profile, personalRecords: records.filter((r) => r.id !== id) });
   };
 
-  // Group by event category
   const grouped = PR_CATEGORIES.reduce((acc, cat) => {
-    const catRecords = records.filter((r) => r.event === cat);
-    if (catRecords.length) acc[cat] = catRecords;
+    const items = records.filter((r) => r.event === cat);
+    if (items.length) acc[cat] = items;
     return acc;
   }, {});
-  const otherRecords = records.filter((r) => !PR_CATEGORIES.includes(r.event));
-  if (otherRecords.length) grouped["Other"] = (grouped["Other"] || []).concat(otherRecords);
 
   return (
     <div className="page">
@@ -556,18 +544,15 @@ function PersonalRecords() {
         </div>
       )}
 
-      {Object.entries(grouped).map(([cat, catRecords]) => (
+      {Object.entries(grouped).map(([cat, items]) => (
         <div key={cat}>
           <div className="sect-title">
             <h2>{cat}</h2>
-            <div className="meta">{catRecords.length} RECORD{catRecords.length > 1 ? "S" : ""}</div>
+            <div className="meta">{items.length} RECORD{items.length > 1 ? "S" : ""}</div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {catRecords
-              .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
-              .map((r) => (
-              <div key={r.id}
-                className="card"
+            {items.sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((r) => (
+              <div key={r.id} className="card"
                 style={{ display: "flex", alignItems: "center", gap: 20, padding: "16px 20px", cursor: "pointer" }}
                 onClick={() => openEdit(r)}>
                 <div style={{ flex: 1 }}>
@@ -577,7 +562,7 @@ function PersonalRecords() {
                   {r.notes && <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>{r.notes}</div>}
                 </div>
                 {r.date && (
-                  <div className="mono" style={{ fontSize: 12, color: "var(--text-3)", textAlign: "right" }}>
+                  <div className="mono" style={{ fontSize: 12, color: "var(--text-3)" }}>
                     {new Date(r.date).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
                   </div>
                 )}
@@ -588,93 +573,8 @@ function PersonalRecords() {
         </div>
       ))}
 
-      <PRModal
-        open={modalOpen}
-        onClose={() => { setModalOpen(false); setEditing(null); }}
-        onSave={saveRecord}
-        onDelete={deleteRecord}
-        editing={editing}
-      />
-    </div>
-  );
-}
-
-// --- Custom achievement modal ---
-function CustomAchModal({ open, onClose, onSave, onDelete, editing }) {
-  const isEdit = !!editing;
-  const [form, setForm] = uS({ icon: "🏅", title: "", sub: "", earned: true });
-
-  uE(() => {
-    if (editing) setForm({ icon: editing.icon || "🏅", title: editing.title, sub: editing.sub || "", earned: !!editing.earned });
-    else if (open) setForm({ icon: "🏅", title: "", sub: "", earned: true });
-  }, [editing, open]);
-
-  if (!open) return null;
-
-  const submit = (e) => {
-    e.preventDefault();
-    if (!form.title.trim()) return;
-    onSave({ icon: form.icon || "🏅", title: form.title.trim(), sub: form.sub.trim(), earned: form.earned });
-    onClose();
-  };
-
-  const achInputStyle = {
-    width: "100%", background: "var(--bg-2)", border: "1px solid var(--line)",
-    borderRadius: 8, padding: "10px 12px", color: "var(--text)",
-    fontFamily: "JetBrains Mono, monospace", fontSize: 13, outline: "none",
-  };
-
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
-      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}
-      onClick={onClose}>
-      <form onSubmit={submit} style={{
-        width: 440, maxWidth: "92vw", background: "var(--bg-1)",
-        border: "1px solid var(--line)", borderRadius: 16, padding: 32,
-      }} onClick={(e) => e.stopPropagation()}>
-        <div className="mono" style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>
-          {isEdit ? "Edit achievement" : "New achievement"}
-        </div>
-        <h2 style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 24, letterSpacing: "-0.03em", margin: "6px 0 20px" }}>
-          {isEdit ? "Edit" : "Add achievement"}
-        </h2>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: 12 }}>
-            <label>
-              <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>Icon</div>
-              <input value={form.icon} onChange={(e) => setForm((f) => ({ ...f, icon: e.target.value }))}
-                placeholder="🏅" style={{ ...achInputStyle, textAlign: "center", fontSize: 20 }} />
-            </label>
-            <label>
-              <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>Title</div>
-              <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                placeholder="Paris Marathon 2024" style={achInputStyle} autoFocus />
-            </label>
-          </div>
-          <label>
-            <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>Description</div>
-            <input value={form.sub} onChange={(e) => setForm((f) => ({ ...f, sub: e.target.value }))}
-              placeholder="Finished in 3:52:14" style={achInputStyle} />
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-            <input type="checkbox" checked={form.earned} onChange={(e) => setForm((f) => ({ ...f, earned: e.target.checked }))}
-              style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }} />
-            <span style={{ fontSize: 13, color: "var(--text-2)" }}>Mark as earned</span>
-          </label>
-        </div>
-
-        <div style={{ display: "flex", gap: 8, marginTop: 24, justifyContent: "space-between" }}>
-          {isEdit ? (
-            <button type="button" className="btn ghost" style={{ color: "var(--danger)" }}
-              onClick={() => { onDelete(editing.id); onClose(); }}>Delete</button>
-          ) : <div />}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn">{isEdit ? "Save" : "Add"}</button>
-          </div>
-        </div>
-      </form>
+      <PRModal open={modalOpen} onClose={() => { setModalOpen(false); setEditing(null); }}
+        onSave={saveRecord} onDelete={deleteRecord} editing={editing} />
     </div>
   );
 }
@@ -694,6 +594,7 @@ function Profile() {
       .reduce((m, r) => Math.min(m, r.pace), Infinity);
     const fastest10k = runs.filter((r) => r.distance >= 9.8 && r.distance <= 10.5)
       .reduce((m, r) => Math.min(m, r.pace), Infinity);
+    // Biggest month in km
     const byMonth = {};
     for (const r of runs) {
       const k = `${r.date.getFullYear()}-${r.date.getMonth()}`;
@@ -705,56 +606,22 @@ function Profile() {
     for (let i = weekly.length - 1; i >= 0; i--) {
       if (weekly[i].runs >= 2) curStreak++; else break;
     }
-    return [
-      // — First steps —
-      { id: "a0",  icon: "▶",   title: "First run",       sub: runs.length > 0 ? `${runs.length} runs logged` : "Log your very first run",     earned: runs.length > 0 },
-      { id: "a1a", icon: "5K",  title: "First 5K",        sub: longest >= 5 ? "Done" : "Complete a 5km run",                                   earned: longest >= 5 },
-      { id: "a1",  icon: "10K", title: "First 10K",       sub: longest >= 10 ? "Done" : "Complete a 10km run",                                 earned: longest >= 10 },
-      { id: "a1b", icon: "20K", title: "First 20K",       sub: longest >= 20 ? "Done" : "Complete a 20km run",                                 earned: longest >= 20 },
-      { id: "a5",  icon: "21K", title: "Half marathon",   sub: longest >= 21.0975 ? "Done" : "Complete 21.1km",                                earned: longest >= 21.0975 },
-      { id: "a5b", icon: "42K", title: "Marathon",        sub: longest >= 42.195 ? "Done" : "Complete 42.2km",                                 earned: longest >= 42.195 },
-      // — Volume —
-      { id: "a6a", icon: "200", title: "200km total",     sub: totals.distance >= 200 ? "Done" : `${totals.distance}km / 200km`,               earned: totals.distance >= 200 },
-      { id: "a6",  icon: "500", title: "500km total",     sub: totals.distance >= 500 ? "Done" : `${totals.distance}km / 500km`,               earned: totals.distance >= 500 },
-      { id: "a6b", icon: "1K",  title: "1000km total",    sub: totals.distance >= 1000 ? "Done" : `${totals.distance}km / 1000km`,             earned: totals.distance >= 1000 },
-      // — Run count —
-      { id: "a8a", icon: "10",  title: "10 runs",         sub: totals.runs >= 10 ? `${totals.runs} logged` : `${totals.runs} / 10 runs`,        earned: totals.runs >= 10 },
-      { id: "a8",  icon: "50",  title: "50 runs",         sub: totals.runs >= 50 ? `${totals.runs} logged` : `${totals.runs} / 50 runs`,        earned: totals.runs >= 50 },
-      { id: "a8b", icon: "100×",title: "100 runs",        sub: totals.runs >= 100 ? `${totals.runs} logged` : `${totals.runs} / 100 runs`,      earned: totals.runs >= 100 },
-      // — Pace —
-      { id: "a2",  icon: "5:00",title: "Sub-5 5K pace",  sub: fastest5k < 300 && isFinite(fastest5k) ? `Best: ${secondsToPace(fastest5k)}/km` : "Run a 5K under 5:00/km", earned: fastest5k < 300 && isFinite(fastest5k) },
-      { id: "a7",  icon: "45",  title: "Sub-45 10K",     sub: fastest10k < 2700 && isFinite(fastest10k) ? `Best: ${secondsToPace(fastest10k)}/km` : "Run a 10K under 45:00", earned: fastest10k < 2700 && isFinite(fastest10k) },
-      // — Consistency —
-      { id: "a3",  icon: "100", title: "100km month",    sub: bestMonthKm >= 100 ? `Best: ${bestMonthKm.toFixed(0)}km` : "Log 100km in one month",    earned: bestMonthKm >= 100 },
-      { id: "a4",  icon: "4W",  title: "4-week streak",  sub: curStreak >= 4 ? `Current: ${curStreak} weeks` : "4 consecutive active weeks",          earned: curStreak >= 4 },
-      { id: "a4b", icon: "8W",  title: "8-week streak",  sub: curStreak >= 8 ? `Current: ${curStreak} weeks` : "8 consecutive active weeks",          earned: curStreak >= 8 },
+
+    const list = [
+      { id: "a1", title: "First 10K", sub: longest >= 10 ? "Complete a 10km run" : "Complete a 10km run", earned: longest >= 10, icon: "10K" },
+      { id: "a2", title: "Sub-5 pace", sub: fastest5k < 300 ? `5K @ ${secondsToPace(fastest5k)}/km` : "Run a 5K under 5:00/km", earned: fastest5k < 300 && isFinite(fastest5k), icon: "5:00" },
+      { id: "a3", title: "100km month", sub: bestMonthKm >= 100 ? `Best: ${bestMonthKm.toFixed(0)}km` : "Log 100km in one month", earned: bestMonthKm >= 100, icon: "100" },
+      { id: "a4", title: "4-week streak", sub: curStreak >= 4 ? `Current: ${curStreak} weeks` : "4 consecutive weeks, ≥2 runs", earned: curStreak >= 4, icon: "4W" },
+      { id: "a5", title: "Half marathon", sub: longest >= 21.0975 ? "Done" : "Complete 21.1km run", earned: longest >= 21.0975, icon: "21K" },
+      { id: "a6", title: "500km total", sub: totals.distance >= 500 ? "Lifetime: done" : `${totals.distance}km / 500km lifetime`, earned: totals.distance >= 500, icon: "500" },
+      { id: "a7", title: "Sub-45 10K", sub: fastest10k < 2700 ? `10K @ ${secondsToPace(fastest10k)}/km` : "Run a 10K under 45:00", earned: fastest10k < 2700 && isFinite(fastest10k), icon: "45" },
+      { id: "a8", title: "50 runs", sub: totals.runs >= 50 ? `${totals.runs} runs` : `${totals.runs} / 50 runs`, earned: totals.runs >= 50, icon: "50" },
     ];
+    return list;
   }, [runs, totals]);
 
   const earned = achs.filter((a) => a.earned);
   const locked = achs.filter((a) => !a.earned);
-  const customAchs = profile.customAchs || [];
-
-  const [achModalOpen, setAchModalOpen] = uS(false);
-  const [achEditing, setAchEditing] = uS(null);
-
-  const openNewAch = () => { setAchEditing(null); setAchModalOpen(true); };
-  const openEditAch = (a) => { setAchEditing(a); setAchModalOpen(true); };
-
-  const saveCustomAch = async (ach) => {
-    let updated;
-    if (achEditing) {
-      updated = customAchs.map((a) => a.id === achEditing.id ? { ...a, ...ach } : a);
-    } else {
-      updated = [...customAchs, { ...ach, id: `c-${Date.now()}` }];
-    }
-    await saveProfile({ ...profile, customAchs: updated });
-  };
-
-  const deleteCustomAch = async (id) => {
-    if (!confirm("Delete this achievement?")) return;
-    await saveProfile({ ...profile, customAchs: customAchs.filter((a) => a.id !== id) });
-  };
 
   const initials = (profile.name || "").trim()
     .split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "??";
@@ -835,7 +702,7 @@ function Profile() {
 
       <div className="sect-title">
         <h2>Achievements</h2>
-        <div className="meta">{earned.length} / {achs.length} EARNED · {customAchs.length} CUSTOM</div>
+        <div className="meta">{earned.length} / {achs.length} EARNED</div>
       </div>
       <div className="ach-grid">
         {[...earned, ...locked].map((a) => (
@@ -847,35 +714,7 @@ function Profile() {
             </div>
           </div>
         ))}
-        {customAchs.map((a) => (
-          <div key={a.id} className={`ach ${!a.earned ? "locked" : ""}`}
-            style={{ cursor: "pointer", position: "relative" }}
-            onClick={() => openEditAch(a)}>
-            <div className="ach-icon">{a.icon || "★"}</div>
-            <div style={{ flex: 1 }}>
-              <div className="title">{a.title}</div>
-              <div className="sub">{a.sub}</div>
-            </div>
-            <div className="mono" style={{ fontSize: 9, color: "var(--text-3)", alignSelf: "flex-start", paddingTop: 2 }}>CUSTOM</div>
-          </div>
-        ))}
-        <div className="ach locked" style={{ cursor: "pointer", border: "1px dashed var(--line)" }}
-          onClick={openNewAch}>
-          <div className="ach-icon" style={{ fontSize: 20 }}>+</div>
-          <div>
-            <div className="title">Add achievement</div>
-            <div className="sub">Log a race, milestone, or any personal win</div>
-          </div>
-        </div>
       </div>
-
-      <CustomAchModal
-        open={achModalOpen}
-        onClose={() => { setAchModalOpen(false); setAchEditing(null); }}
-        onSave={saveCustomAch}
-        onDelete={deleteCustomAch}
-        editing={achEditing}
-      />
     </div>
   );
 }
