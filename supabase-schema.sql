@@ -86,9 +86,9 @@ insert into public.profile (id) values (1) on conflict do nothing;
 -- If you ran the original schema before segments was added, run:
 -- alter table public.runs add column if not exists segments jsonb default '[]'::jsonb;
 
--- Seed a few starter goals
-insert into public.goals (title, target, current, unit, due, done) values
-  ('Run 150km this month', 150, 0, 'km', 'end of month', false),
-  ('Sub-22 5K time trial', 22, 0, 'min', 'in 4 weeks', false),
-  ('10 runs this month', 10, 0, 'runs', 'end of month', false)
-on conflict do nothing;
+-- (Optional) seed a few starter goals. Uncomment if you want examples:
+-- insert into public.goals (title, target, current, unit, due, done) values
+--   ('Run 150km this month', 150, 0, 'km', 'end of month', false),
+--   ('Sub-22 5K time trial', 22, 0, 'min', 'in 4 weeks', false),
+--   ('10 runs this month', 10, 0, 'runs', 'end of month', false)
+-- on conflict do nothing;

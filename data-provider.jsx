@@ -8,161 +8,120 @@ function useData() {
 }
 
 function DataProvider({ children }) {
-  const [mode, setMode] = React.useState("loading"); // loading | supabase | seed
+  const [mode, setMode] = React.useState("loading"); // loading | supabase | unconfigured
   const [runs, setRuns] = React.useState([]);
-  const [goals, setGoals] = React.useState(GOALS);
-  const [plan, setPlan] = React.useState(PLAN);
+  const [goals, setGoals] = React.useState([]);
+  const [plan, setPlan] = React.useState([]);
   const [profile, setProfile] = React.useState({
-    name: "Your name", tagline: "RUNNER", pr5k: "", pr10k: "", prHalf: "", memberSince: "Jan 2024",
+    name: "", tagline: "", pr5k: "", pr10k: "", prHalf: "", memberSince: "",
   });
   const [configOpen, setConfigOpen] = React.useState(false);
 
-  const LS_PROFILE = "pacelog-profile";
-
   const reload = React.useCallback(async () => {
     const ok = await initSupabase();
-    const localProfile = localStorage.getItem(LS_PROFILE);
-    if (localProfile) {
-      try { setProfile(JSON.parse(localProfile)); } catch {}
-    }
     if (!ok) {
-      setMode("seed");
-      setRuns(RUNS);
-      setGoals(GOALS);
-      setPlan(PLAN);
+      setMode("unconfigured");
+      setRuns([]); setGoals([]); setPlan([]);
+      setProfile({ name: "", tagline: "", pr5k: "", pr10k: "", prHalf: "", memberSince: "" });
       return;
     }
     const [r, g, p, pr] = await Promise.all([fetchRuns(), fetchGoals(), fetchPlan(), fetchProfile()]);
-    setRuns(r && r.length ? r : RUNS);
-    setGoals(g && g.length ? g : GOALS);
-    setPlan(p && p.length ? p : PLAN);
+    setRuns(r || []);
+    setGoals(g || []);
+    setPlan(p || []);
     if (pr) setProfile(pr);
     setMode("supabase");
   }, []);
 
   const saveProfile = async (p) => {
     setProfile(p);
-    localStorage.setItem(LS_PROFILE, JSON.stringify(p));
     if (mode === "supabase") await updateProfile(p);
   };
 
   React.useEffect(() => { reload(); }, [reload]);
 
   const addRun = async (run) => {
-    if (mode === "supabase") {
-      await insertRun(run);
-      const fresh = await fetchRuns();
-      if (fresh) setRuns(fresh);
-    } else {
-      setRuns((rs) => [{ ...run, id: `local-${Date.now()}`, paceStr: secondsToPace(run.pace) }, ...rs]);
-    }
+    if (mode !== "supabase") return;
+    await insertRun(run);
+    const fresh = await fetchRuns();
+    if (fresh) setRuns(fresh);
   };
 
   const editRun = async (id, run) => {
-    if (mode === "supabase") {
-      await updateRun(id, run);
-      const fresh = await fetchRuns();
-      if (fresh) setRuns(fresh);
-    } else {
-      setRuns((rs) => rs.map((r) => r.id === id ? { ...r, ...run, paceStr: secondsToPace(run.pace) } : r));
-    }
-  };
+    if (mode !== "supabase") return;
+    await updateRun(id, run);
+    const fresh = await fetchRuns();
+    if (fresh) setRuns(fresh);
 
   const removeRun = async (id) => {
-    if (mode === "supabase") {
-      await deleteRun(id);
-      const fresh = await fetchRuns();
-      if (fresh) setRuns(fresh);
-    } else {
-      setRuns((rs) => rs.filter((r) => r.id !== id));
-    }
+    if (mode !== "supabase") return;
+    await deleteRun(id);
+    const fresh = await fetchRuns();
+    if (fresh) setRuns(fresh);
   };
 
   const toggleGoal = async (id) => {
+    if (mode !== "supabase") return;
+    const g = goals.find((x) => x.id === id);
+    if (!g) return;
     setGoals((gs) => gs.map((x) => x.id === id ? { ...x, done: !x.done } : x));
-    if (mode === "supabase") {
-      const g = goals.find((x) => x.id === id);
-      if (g) await updateGoalDone(id, !g.done);
-    }
+    await updateGoalDone(id, !g.done);
   };
 
   const addGoal = async (g) => {
-    if (mode === "supabase") {
-      await insertGoal(g);
-      const fresh = await fetchGoals();
-      if (fresh) setGoals(fresh);
-    } else {
-      setGoals((gs) => [...gs, { ...g, id: `local-g-${Date.now()}`, done: !!g.done, current: g.current || 0 }]);
-    }
+    if (mode !== "supabase") return;
+    await insertGoal(g);
+    const fresh = await fetchGoals();
+    if (fresh) setGoals(fresh);
   };
 
   const editGoal = async (id, g) => {
-    if (mode === "supabase") {
-      await updateGoal(id, g);
-      const fresh = await fetchGoals();
-      if (fresh) setGoals(fresh);
-    } else {
-      setGoals((gs) => gs.map((x) => x.id === id ? { ...x, ...g } : x));
-    }
+    if (mode !== "supabase") return;
+    await updateGoal(id, g);
+    const fresh = await fetchGoals();
+    if (fresh) setGoals(fresh);
   };
 
   const removeGoal = async (id) => {
-    if (mode === "supabase") {
-      await deleteGoal(id);
-      const fresh = await fetchGoals();
-      if (fresh) setGoals(fresh);
-    } else {
-      setGoals((gs) => gs.filter((x) => x.id !== id));
-    }
+    if (mode !== "supabase") return;
+    await deleteGoal(id);
+    const fresh = await fetchGoals();
+    if (fresh) setGoals(fresh);
   };
 
   const togglePlan = async (id) => {
+    if (mode !== "supabase") return;
+    const p = plan.find((x) => x.id === id);
+    if (!p) return;
     setPlan((ps) => ps.map((x) => x.id === id ? { ...x, done: !x.done } : x));
-    if (mode === "supabase") {
-      const p = plan.find((x) => x.id === id);
-      if (p) await updatePlanDone(id, !p.done);
-    }
+    await updatePlanDone(id, !p.done);
   };
 
   const addPlan = async (p) => {
-    if (mode === "supabase") {
-      await insertPlan(p);
-      const fresh = await fetchPlan();
-      if (fresh) setPlan(fresh);
-    } else {
-      setPlan((ps) => [...ps, { ...p, id: `local-p-${Date.now()}`, done: !!p.done }]);
-    }
+    if (mode !== "supabase") return;
+    await insertPlan(p);
+    const fresh = await fetchPlan();
+    if (fresh) setPlan(fresh);
   };
 
   const editPlan = async (id, p) => {
-    if (mode === "supabase") {
-      await updatePlan(id, p);
-      const fresh = await fetchPlan();
-      if (fresh) setPlan(fresh);
-    } else {
-      setPlan((ps) => ps.map((x) => x.id === id ? { ...x, ...p } : x));
-    }
+    if (mode !== "supabase") return;
+    await updatePlan(id, p);
+    const fresh = await fetchPlan();
+    if (fresh) setPlan(fresh);
+  };
+
+  const removePlan = async (id) => {
+    if (mode !== "supabase") return;
+    await deletePlan(id);
+    const fresh = await fetchPlan();
+    if (fresh) setPlan(fresh);
   };
 
   const resetAll = async () => {
     await wipeAllData();
-    setRuns([]);
-    setGoals([]);
-    setPlan([]);
-    setProfile({
-      name: "Your name", tagline: "RUNNER",
-      pr5k: "", pr10k: "", prHalf: "", memberSince: "Jan 2024",
-    });
-  };
-
-  const removePlan = async (id) => {
-    if (mode === "supabase") {
-      await deletePlan(id);
-      const fresh = await fetchPlan();
-      if (fresh) setPlan(fresh);
-    } else {
-      setPlan((ps) => ps.filter((x) => x.id !== id));
-    }
+    setRuns([]); setGoals([]); setPlan([]);
+    setProfile({ name: "", tagline: "", pr5k: "", pr10k: "", prHalf: "", memberSince: "" });
   };
 
   return (
@@ -215,7 +174,7 @@ function ConfigPanel({ open, onClose, onSaved }) {
   const disconnect = () => {
     clearSupabaseConfig();
     setUrl(""); setKey("");
-    setStatus("Disconnected — using seed data.");
+    setStatus("Disconnected — connect to sync.");
     setTimeout(() => { onSaved(); onClose(); }, 400);
   };
 

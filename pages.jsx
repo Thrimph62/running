@@ -72,7 +72,7 @@ function computeTotals(runs) {
 
 // --- Home ---
 function Home({ onOpenRun, onAddRun }) {
-  const { runs } = useData();
+  const { runs, goals, profile } = useData();
   const weekly = uM(() => computeWeekly(runs), [runs]);
   const recent = runs.slice(0, 5);
   const thisWeek = weekly[weekly.length - 1];
@@ -85,12 +85,30 @@ function Home({ onOpenRun, onAddRun }) {
     .filter((r) => r.date.getMonth() === now.getMonth() && r.date.getFullYear() === now.getFullYear())
     .reduce((a, r) => a + r.distance, 0);
 
+  // Find a monthly km goal to reference (active, unit km, any title)
+  const monthlyGoal = goals.find((g) => !g.done && g.unit === "km" && g.target >= 30) || null;
+
+  // Streak: consecutive weeks (ending this week) with ≥ 2 runs
+  const streak = uM(() => {
+    let s = 0;
+    for (let i = weekly.length - 1; i >= 0; i--) {
+      if (weekly[i].runs >= 2) s++;
+      else break;
+    }
+    return s;
+  }, [weekly]);
+
+  const hour = now.getHours();
+  const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const firstName = (profile?.name || "").trim().split(/\s+/)[0] || "";
+  const todayStr = now.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric" }).toUpperCase();
+
   return (
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>Good morning, Alex.</h1>
-          <div className="sub">SUNDAY · APRIL 19, 2026 · {STREAK}-WEEK STREAK</div>
+          <h1>{greet}{firstName ? `, ${firstName}` : ""}.</h1>
+          <div className="sub">{todayStr} · {streak}-WEEK STREAK</div>
         </div>
         <div className="right">
           <button className="btn ghost" onClick={onAddRun}>+ Log run</button>
@@ -116,12 +134,16 @@ function Home({ onOpenRun, onAddRun }) {
         <div className="stat">
           <div className="label">This month</div>
           <div className="big">{monthDist.toFixed(1)}<span className="unit">km</span></div>
-          <div className="delta">Goal: 150km · {Math.round((monthDist / 150) * 100)}%</div>
+          <div className="delta">
+            {monthlyGoal
+              ? `Goal: ${monthlyGoal.target}${monthlyGoal.unit} · ${Math.round((monthDist / monthlyGoal.target) * 100)}%`
+              : "Set a monthly goal →"}
+          </div>
         </div>
         <div className="stat">
           <div className="label">Runs this week</div>
-          <div className="big">{thisWeek?.runs || 0}<span className="unit">/3</span></div>
-          <div className="delta up">on schedule</div>
+          <div className="big">{thisWeek?.runs || 0}</div>
+          <div className="delta">{runs.length} total logged</div>
         </div>
       </div>
 
@@ -379,12 +401,33 @@ function Stats() {
 
 // --- Goals ---
 function Goals() {
-  const { goals, toggleGoal, addGoal, editGoal, removeGoal } = useData();
+  const { goals, runs, toggleGoal, addGoal, editGoal, removeGoal } = useData();
   const [modalOpen, setModalOpen] = uS(false);
   const [editing, setEditing] = uS(null);
 
   const active = goals.filter((g) => !g.done);
   const done = goals.filter((g) => g.done);
+
+  const weekly = uM(() => computeWeekly(runs), [runs]);
+  const streak = uM(() => {
+    let s = 0;
+    for (let i = weekly.length - 1; i >= 0; i--) {
+      if (weekly[i].runs >= 2) s++; else break;
+    }
+    return s;
+  }, [weekly]);
+
+  const now = new Date();
+  const runsThisMonth = runs.filter((r) =>
+    r.date.getMonth() === now.getMonth() && r.date.getFullYear() === now.getFullYear()
+  ).length;
+
+  // Consistency: % of weeks in last 12 with ≥ target runs (use 3 if no goal)
+  const runTarget = 3;
+  const recentWeeks = weekly.slice(-12);
+  const consistency = recentWeeks.length
+    ? Math.round((recentWeeks.filter((w) => w.runs >= runTarget).length / recentWeeks.length) * 100)
+    : 0;
 
   const openNew = () => { setEditing(null); setModalOpen(true); };
   const openEdit = (g) => { setEditing(g); setModalOpen(true); };
@@ -404,18 +447,18 @@ function Goals() {
       <div className="grid g-3" style={{ marginBottom: 24 }}>
         <div className="stat hero">
           <div className="label">Current streak</div>
-          <div className="big">{STREAK}<span className="unit">weeks</span></div>
-          <div className="delta">best ever — keep it going</div>
+          <div className="big">{streak}<span className="unit">{streak === 1 ? "week" : "weeks"}</span></div>
+          <div className="delta">{streak > 0 ? "keep it going" : "start a new streak this week"}</div>
         </div>
         <div className="stat">
           <div className="label">Runs this month</div>
-          <div className="big">8<span className="unit">/10</span></div>
-          <div className="delta up">on pace for goal</div>
+          <div className="big">{runsThisMonth}</div>
+          <div className="delta">{now.toLocaleDateString("en", { month: "long" })}</div>
         </div>
         <div className="stat">
           <div className="label">Consistency</div>
-          <div className="big">92<span className="unit">%</span></div>
-          <div className="delta">vs your 3-run/week target</div>
+          <div className="big">{consistency}<span className="unit">%</span></div>
+          <div className="delta">vs {runTarget}-run/week target · last 12 wks</div>
         </div>
       </div>
 
@@ -512,7 +555,7 @@ function Plan() {
       <div className="page-head">
         <div>
           <h1>Training plan</h1>
-          <div className="sub">4-WEEK BLOCK · 10K BUILD · MAY 17</div>
+          <div className="sub">4-WEEK BLOCK · {planState.length} WORKOUT{planState.length === 1 ? "" : "S"} PLANNED</div>
         </div>
         <div className="right">
           <button className="btn" onClick={() => openNew()}>+ Plan workout</button>
@@ -582,14 +625,47 @@ function Plan() {
 function Profile() {
   const { runs, profile, saveProfile } = useData();
   const totals = uM(() => computeTotals(runs), [runs]);
-  const [achs, setAchs] = uS(ACHIEVEMENTS);
   const [editing, setEditing] = uS(false);
   const [form, setForm] = uS(profile);
   uE(() => { setForm(profile); }, [profile]);
+
+  // Derive achievements from real runs
+  const achs = uM(() => {
+    const longest = runs.reduce((m, r) => Math.max(m, r.distance), 0);
+    const fastest5k = runs.filter((r) => r.distance >= 4.8 && r.distance <= 5.5)
+      .reduce((m, r) => Math.min(m, r.pace), Infinity);
+    const fastest10k = runs.filter((r) => r.distance >= 9.8 && r.distance <= 10.5)
+      .reduce((m, r) => Math.min(m, r.pace), Infinity);
+    // Biggest month in km
+    const byMonth = {};
+    for (const r of runs) {
+      const k = `${r.date.getFullYear()}-${r.date.getMonth()}`;
+      byMonth[k] = (byMonth[k] || 0) + r.distance;
+    }
+    const bestMonthKm = Math.max(0, ...Object.values(byMonth));
+    const weekly = computeWeekly(runs);
+    let curStreak = 0;
+    for (let i = weekly.length - 1; i >= 0; i--) {
+      if (weekly[i].runs >= 2) curStreak++; else break;
+    }
+
+    const list = [
+      { id: "a1", title: "First 10K", sub: longest >= 10 ? "Complete a 10km run" : "Complete a 10km run", earned: longest >= 10, icon: "10K" },
+      { id: "a2", title: "Sub-5 pace", sub: fastest5k < 300 ? `5K @ ${secondsToPace(fastest5k)}/km` : "Run a 5K under 5:00/km", earned: fastest5k < 300 && isFinite(fastest5k), icon: "5:00" },
+      { id: "a3", title: "100km month", sub: bestMonthKm >= 100 ? `Best: ${bestMonthKm.toFixed(0)}km` : "Log 100km in one month", earned: bestMonthKm >= 100, icon: "100" },
+      { id: "a4", title: "4-week streak", sub: curStreak >= 4 ? `Current: ${curStreak} weeks` : "4 consecutive weeks, ≥2 runs", earned: curStreak >= 4, icon: "4W" },
+      { id: "a5", title: "Half marathon", sub: longest >= 21.0975 ? "Done" : "Complete 21.1km run", earned: longest >= 21.0975, icon: "21K" },
+      { id: "a6", title: "500km total", sub: totals.distance >= 500 ? "Lifetime: done" : `${totals.distance}km / 500km lifetime`, earned: totals.distance >= 500, icon: "500" },
+      { id: "a7", title: "Sub-45 10K", sub: fastest10k < 2700 ? `10K @ ${secondsToPace(fastest10k)}/km` : "Run a 10K under 45:00", earned: fastest10k < 2700 && isFinite(fastest10k), icon: "45" },
+      { id: "a8", title: "50 runs", sub: totals.runs >= 50 ? `${totals.runs} runs` : `${totals.runs} / 50 runs`, earned: totals.runs >= 50, icon: "50" },
+    ];
+    return list;
+  }, [runs, totals]);
+
   const earned = achs.filter((a) => a.earned);
   const locked = achs.filter((a) => !a.earned);
 
-  const initials = (profile.name || "??")
+  const initials = (profile.name || "").trim()
     .split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "??";
 
   const save = async () => {

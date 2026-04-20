@@ -221,7 +221,7 @@ async function deletePlan(id) {
 }
 
 async function wipeAllData() {
-  // Clear local data always
+  // Clear local caches
   try {
     ["pacelog-profile", "pacelog-tab", "pacelog-config-dismissed"].forEach((k) => localStorage.removeItem(k));
   } catch {}
@@ -232,7 +232,7 @@ async function wipeAllData() {
   await supabase.from("goals").delete().neq("id", all);
   await supabase.from("plan").delete().neq("id", all);
   await supabase.from("profile").update({
-    name: "Your name", tagline: "RUNNER",
+    name: "", tagline: "",
     pr_5k: null, pr_10k: null, pr_half: null,
   }).eq("id", 1);
   return true;
@@ -243,12 +243,12 @@ async function fetchProfile() {
   const { data, error } = await supabase.from("profile").select("*").eq("id", 1).single();
   if (error) { console.error(error); return null; }
   return {
-    name: data.name || "Your name",
-    tagline: data.tagline || "RUNNER",
+    name: data.name || "",
+    tagline: data.tagline || "",
     pr5k: data.pr_5k || "",
     pr10k: data.pr_10k || "",
     prHalf: data.pr_half || "",
-    memberSince: data.member_since || "Jan 2024",
+    memberSince: data.member_since || "",
   };
 }
 
