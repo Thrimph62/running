@@ -4,9 +4,8 @@ const TABS = [
   { id: "home", label: "Home", key: "1" },
   { id: "history", label: "History", key: "2" },
   { id: "stats", label: "Stats & trends", key: "3" },
-  { id: "goals", label: "Goals & streaks", key: "4" },
-  { id: "plan", label: "Training plan", key: "5" },
-  { id: "profile", label: "Profile", key: "6" },
+  { id: "goals", label: "Personal records", key: "4" },
+  { id: "profile", label: "Profile", key: "5" },
 ];
 
 const ACCENT_PRESETS = [
@@ -38,17 +37,8 @@ function Rail({ tab, setTab, onConfig }) {
           <span className="shortcut">{t.key}</span>
         </button>
       ))}
-      <div className="rail-section">Train</div>
-      {TABS.slice(3, 5).map((t) => (
-        <button key={t.id}
-          className={`rail-item ${tab === t.id ? "active" : ""}`}
-          onClick={() => setTab(t.id)}>
-          {t.label}
-          <span className="shortcut">{t.key}</span>
-        </button>
-      ))}
       <div className="rail-section">You</div>
-      {TABS.slice(5).map((t) => (
+      {TABS.slice(3).map((t) => (
         <button key={t.id}
           className={`rail-item ${tab === t.id ? "active" : ""}`}
           onClick={() => setTab(t.id)}>
@@ -175,8 +165,7 @@ function Shell() {
   else if (tab === "home") content = <Home onOpenRun={setOpenRun} onAddRun={() => setAddOpen(true)} />;
   else if (tab === "history") content = <History onOpenRun={setOpenRun} />;
   else if (tab === "stats") content = <Stats />;
-  else if (tab === "goals") content = <Goals />;
-  else if (tab === "plan") content = <Plan />;
+  else if (tab === "goals") content = <PersonalRecords />;
   else if (tab === "profile") content = <Profile />;
 
   return (
