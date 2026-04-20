@@ -596,6 +596,33 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
                   label="km/h" placeholder="11.8"
                   value={form.speed} onChange={(v) => upd("speed", v)} />
               </div>
+              {(() => {
+                const d = parseFloat(form.distance);
+                const t = parseDurationStr(form.duration);
+                if (d > 0 && t > 0) {
+                  const pace = Math.round(t / d);
+                  const speed = (3600 / pace).toFixed(1);
+                  const paceStr = secondsToPace(pace);
+                  const isPlausible = pace >= 120 && pace <= 1800; // 2:00–30:00 /km
+                  return (
+                    <div style={{
+                      marginTop: 8, padding: "8px 12px",
+                      background: isPlausible ? "color-mix(in oklab, var(--accent) 8%, transparent)" : "color-mix(in oklab, #ff5a1f 15%, transparent)",
+                      border: `1px solid ${isPlausible ? "color-mix(in oklab, var(--accent) 30%, transparent)" : "#ff5a1f"}`,
+                      borderRadius: 8,
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 12,
+                      display: "flex", gap: 20,
+                    }}>
+                      <span style={{ color: "var(--text-3)" }}>PACE</span>
+                      <span style={{ color: isPlausible ? "var(--accent)" : "#ff5a1f", fontWeight: 700 }}>
+                        {speed} km/h · {paceStr}/km
+                      </span>
+                      {!isPlausible && <span style={{ color: "#ff5a1f" }}>⚠ check duration format (use mm:ss not hh:mm:ss)</span>}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
           )}
           <Field label="Elevation (m)">

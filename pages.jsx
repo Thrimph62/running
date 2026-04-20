@@ -763,8 +763,13 @@ function RunDetail({ run, onClose, onEdit }) {
             <div className="display" style={{ fontSize: 28, marginTop: 4 }}>{formatDuration(run.duration)}</div>
           </div>
           <div>
-            <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Avg pace</div>
-            <div className="display" style={{ fontSize: 28, marginTop: 4 }}>{run.paceStr}<span style={{ fontSize: 14, color: "var(--text-3)" }}>/km</span></div>
+            <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Avg speed</div>
+            <div className="display" style={{ fontSize: 28, marginTop: 4 }}>
+              {run.pace ? (3600 / run.pace).toFixed(1) : "—"}<span style={{ fontSize: 14, color: "var(--text-3)" }}>km/h</span>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 4, fontFamily: "JetBrains Mono, monospace" }}>
+              {run.paceStr}/km
+            </div>
           </div>
           <div>
             <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Elevation</div>
