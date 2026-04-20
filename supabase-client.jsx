@@ -250,6 +250,7 @@ async function fetchProfile() {
     prHalf: data.pr_half || "",
     memberSince: data.member_since || "",
     customAchs: Array.isArray(data.custom_achievements) ? data.custom_achievements : [],
+    personalRecords: Array.isArray(data.personal_records) ? data.personal_records : [],
   };
 }
 
@@ -264,6 +265,7 @@ async function updateProfile(p) {
     pr_10k: p.pr10k,
     pr_half: p.prHalf,
     custom_achievements: p.customAchs || [],
+    personal_records: p.personalRecords || [],
     updated_at: new Date().toISOString(),
   }, { onConflict: "id" });
   if (error) throw error;

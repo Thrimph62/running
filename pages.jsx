@@ -26,7 +26,10 @@ function RunRow({ run, onClick }) {
       </div>
       <div className="metric">{run.distance}<span className="u">km</span></div>
       <div className="metric">{formatDuration(run.duration)}</div>
-      <div className="metric">{run.paceStr}<span className="u">/km</span></div>
+      <div className="metric">
+        <div>{(3600 / run.pace).toFixed(1)}<span className="u">km/h</span></div>
+        <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 2 }}>{run.paceStr}/km</div>
+      </div>
       <div style={{ width: 80, height: 40 }}>
         <Sparkline values={run.splits} />
       </div>
@@ -72,21 +75,45 @@ function computeTotals(runs) {
 
 // --- Home ---
 function Home({ onOpenRun, onAddRun }) {
-  const { runs, goals, profile } = useData();
+  const { runs, profile } = useData();
   const weekly = uM(() => computeWeekly(runs), [runs]);
   const recent = runs.slice(0, 5);
-  const thisWeek = weekly[weekly.length - 1];
-  const lastWeek = weekly[weekly.length - 2];
-  const deltaDist = thisWeek && lastWeek ? +(thisWeek.distance - lastWeek.distance).toFixed(1) : 0;
-  const deltaPace = thisWeek && lastWeek ? thisWeek.avgPace - lastWeek.avgPace : 0;
 
+  // Current Mon–Sun week
   const now = new Date();
+  const weekStart = uM(() => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+  const prevWeekStart = uM(() => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() - 7);
+    return d;
+  }, [weekStart]);
+
+  const thisWeekRuns = uM(() => runs.filter((r) => r.date >= weekStart), [runs, weekStart]);
+  const lastWeekRuns = uM(() => runs.filter((r) => r.date >= prevWeekStart && r.date < weekStart), [runs, prevWeekStart, weekStart]);
+
+  const thisWeek = uM(() => ({
+    distance: +thisWeekRuns.reduce((a, r) => a + r.distance, 0).toFixed(1),
+    runs: thisWeekRuns.length,
+    avgPace: thisWeekRuns.length ? Math.round(thisWeekRuns.reduce((a, r) => a + r.pace, 0) / thisWeekRuns.length) : 0,
+  }), [thisWeekRuns]);
+
+  const lastWeek = uM(() => ({
+    distance: +lastWeekRuns.reduce((a, r) => a + r.distance, 0).toFixed(1),
+    avgPace: lastWeekRuns.length ? Math.round(lastWeekRuns.reduce((a, r) => a + r.pace, 0) / lastWeekRuns.length) : 0,
+  }), [lastWeekRuns]);
+
+  const deltaDist = +(thisWeek.distance - lastWeek.distance).toFixed(1);
+  const deltaSpeed = thisWeek.avgPace && lastWeek.avgPace
+    ? +((3600 / thisWeek.avgPace) - (3600 / lastWeek.avgPace)).toFixed(1) : 0;
+
   const monthDist = runs
     .filter((r) => r.date.getMonth() === now.getMonth() && r.date.getFullYear() === now.getFullYear())
     .reduce((a, r) => a + r.distance, 0);
-
-  // Find a monthly km goal to reference (active, unit km, any title)
-  const monthlyGoal = goals.find((g) => !g.done && g.unit === "km" && g.target >= 30) || null;
 
   // Streak: consecutive weeks (ending this week) with ≥ 2 runs
   const streak = uM(() => {
@@ -103,6 +130,8 @@ function Home({ onOpenRun, onAddRun }) {
   const firstName = (profile?.name || "").trim().split(/\s+/)[0] || "";
   const todayStr = now.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric" }).toUpperCase();
 
+  const thisSpeed = thisWeek.avgPace ? (3600 / thisWeek.avgPace).toFixed(1) : "—";
+
   return (
     <div className="page">
       <div className="page-head">
@@ -111,38 +140,32 @@ function Home({ onOpenRun, onAddRun }) {
           <div className="sub">{todayStr} · {streak}-WEEK STREAK</div>
         </div>
         <div className="right">
-          <button className="btn ghost" onClick={onAddRun}>+ Log run</button>
-          <button className="btn" onClick={onAddRun}>Quick add</button>
+          <button className="btn" onClick={onAddRun}>+ Log run</button>
         </div>
       </div>
 
       <div className="grid g-4" style={{ marginBottom: 24 }}>
         <div className="stat hero">
           <div className="label">This week</div>
-          <div className="big">{thisWeek?.distance || 0}<span className="unit">km</span></div>
+          <div className="big">{thisWeek.distance}<span className="unit">km</span></div>
           <div className="delta">
             {deltaDist >= 0 ? "↑" : "↓"} {Math.abs(deltaDist)}km vs last week
           </div>
         </div>
         <div className="stat">
-          <div className="label">Avg pace · week</div>
-          <div className="big">{secondsToPace(thisWeek?.avgPace || 0)}<span className="unit">/km</span></div>
-          <div className={`delta ${deltaPace < 0 ? "up" : "down"}`}>
-            {deltaPace < 0 ? "↑" : "↓"} {Math.abs(deltaPace)}s vs last week
+          <div className="label">Avg speed · week</div>
+          <div className="big">{thisSpeed}<span className="unit">km/h</span></div>
+          <div className={`delta ${deltaSpeed > 0 ? "up" : deltaSpeed < 0 ? "down" : ""}`}>
+            {deltaSpeed > 0 ? "↑" : deltaSpeed < 0 ? "↓" : "—"} {Math.abs(deltaSpeed)} km/h vs last week
           </div>
         </div>
         <div className="stat">
           <div className="label">This month</div>
           <div className="big">{monthDist.toFixed(1)}<span className="unit">km</span></div>
-          <div className="delta">
-            {monthlyGoal
-              ? `Goal: ${monthlyGoal.target}${monthlyGoal.unit} · ${Math.round((monthDist / monthlyGoal.target) * 100)}%`
-              : "Set a monthly goal →"}
-          </div>
         </div>
         <div className="stat">
           <div className="label">Runs this week</div>
-          <div className="big">{thisWeek?.runs || 0}</div>
+          <div className="big">{thisWeek.runs}</div>
           <div className="delta">{runs.length} total logged</div>
         </div>
       </div>
@@ -229,7 +252,7 @@ function History({ onOpenRun }) {
           letterSpacing: "0.12em",
           color: "var(--text-3)",
         }}>
-          <div>Date</div><div>Route</div><div>Distance</div><div>Duration</div><div>Pace</div><div>Splits</div>
+          <div>Date</div><div>Route</div><div>Distance</div><div>Duration</div><div>Speed / Pace</div><div>Splits</div>
         </div>
         {sorted.map((r) => <RunRow key={r.id} run={r} onClick={() => onOpenRun(r)} />)}
       </div>
@@ -399,224 +422,179 @@ function Stats() {
   );
 }
 
-// --- Goals ---
-function Goals() {
-  const { goals, runs, toggleGoal, addGoal, editGoal, removeGoal } = useData();
-  const [modalOpen, setModalOpen] = uS(false);
-  const [editing, setEditing] = uS(null);
+// --- Personal Records ---
+const PR_CATEGORIES = ["5K", "10K", "Half Marathon", "Marathon", "Other"];
 
-  const active = goals.filter((g) => !g.done);
-  const done = goals.filter((g) => g.done);
+function PRModal({ open, onClose, onSave, onDelete, editing }) {
+  const isEdit = !!editing;
+  const empty = { event: "5K", result: "", date: "", notes: "" };
+  const [form, setForm] = uS(empty);
 
-  const weekly = uM(() => computeWeekly(runs), [runs]);
-  const streak = uM(() => {
-    let s = 0;
-    for (let i = weekly.length - 1; i >= 0; i--) {
-      if (weekly[i].runs >= 2) s++; else break;
-    }
-    return s;
-  }, [weekly]);
+  uE(() => {
+    if (editing) setForm({ event: editing.event, result: editing.result, date: editing.date || "", notes: editing.notes || "" });
+    else if (open) setForm(empty);
+  }, [editing, open]);
 
-  const now = new Date();
-  const runsThisMonth = runs.filter((r) =>
-    r.date.getMonth() === now.getMonth() && r.date.getFullYear() === now.getFullYear()
-  ).length;
+  if (!open) return null;
 
-  // Consistency: % of weeks in last 12 with ≥ target runs (use 3 if no goal)
-  const runTarget = 3;
-  const recentWeeks = weekly.slice(-12);
-  const consistency = recentWeeks.length
-    ? Math.round((recentWeeks.filter((w) => w.runs >= runTarget).length / recentWeeks.length) * 100)
-    : 0;
+  const s = {
+    width: "100%", background: "var(--bg-2)", border: "1px solid var(--line)",
+    borderRadius: 8, padding: "10px 12px", color: "var(--text)",
+    fontFamily: "JetBrains Mono, monospace", fontSize: 13, outline: "none",
+  };
 
-  const openNew = () => { setEditing(null); setModalOpen(true); };
-  const openEdit = (g) => { setEditing(g); setModalOpen(true); };
+  const submit = (e) => {
+    e.preventDefault();
+    if (!form.result.trim()) return;
+    onSave({ event: form.event, result: form.result.trim(), date: form.date, notes: form.notes.trim() });
+    onClose();
+  };
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <h1>Goals & streaks</h1>
-          <div className="sub">{active.length} ACTIVE · {done.length} COMPLETED</div>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}
+      onClick={onClose}>
+      <form onSubmit={submit} style={{
+        width: 460, maxWidth: "92vw", background: "var(--bg-1)",
+        border: "1px solid var(--line)", borderRadius: 16, padding: 32,
+      }} onClick={(e) => e.stopPropagation()}>
+        <div className="mono" style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+          {isEdit ? "Edit record" : "New record"}
         </div>
-        <div className="right">
-          <button className="btn" onClick={openNew}>+ New goal</button>
-        </div>
-      </div>
-
-      <div className="grid g-3" style={{ marginBottom: 24 }}>
-        <div className="stat hero">
-          <div className="label">Current streak</div>
-          <div className="big">{streak}<span className="unit">{streak === 1 ? "week" : "weeks"}</span></div>
-          <div className="delta">{streak > 0 ? "keep it going" : "start a new streak this week"}</div>
-        </div>
-        <div className="stat">
-          <div className="label">Runs this month</div>
-          <div className="big">{runsThisMonth}</div>
-          <div className="delta">{now.toLocaleDateString("en", { month: "long" })}</div>
-        </div>
-        <div className="stat">
-          <div className="label">Consistency</div>
-          <div className="big">{consistency}<span className="unit">%</span></div>
-          <div className="delta">vs {runTarget}-run/week target · last 12 wks</div>
-        </div>
-      </div>
-
-      <div className="sect-title">
-        <h2>Active goals</h2>
-        <div className="meta">TAP CIRCLE TO COMPLETE · CLICK ROW TO EDIT</div>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {active.map((g) => {
-          const pct = Math.min(100, Math.round((g.current / g.target) * 100));
-          return (
-            <div key={g.id} className="goal" style={{ cursor: "pointer" }}>
-              <div className="goal-check" onClick={(e) => { e.stopPropagation(); toggleGoal(g.id); }} />
-              <div className="goal-body" onClick={() => openEdit(g)}>
-                <div className="goal-title">{g.title}</div>
-                <div className="goal-bar">
-                  <div className="fill" style={{ width: `${pct}%` }} />
-                </div>
-                <div className="goal-meta">{g.current}{g.unit} of {g.target}{g.unit} · due {g.due}</div>
-              </div>
-              <div className="goal-pct" onClick={() => openEdit(g)}>{pct}%</div>
-            </div>
-          );
-        })}
-        {active.length === 0 && (
-          <div className="muted mono" style={{ fontSize: 12, padding: 16 }}>No active goals. Add one to get started.</div>
-        )}
-      </div>
-
-      {done.length > 0 && (
-        <>
-          <div className="sect-title">
-            <h2>Completed</h2>
-            <div className="meta">{done.length}</div>
+        <h2 style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 24, letterSpacing: "-0.03em", margin: "6px 0 20px" }}>
+          {isEdit ? "Edit PR" : "Add PR"}
+        </h2>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="grid g-2" style={{ gap: 12 }}>
+            <label>
+              <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>Event</div>
+              <select value={form.event} onChange={(e) => setForm((f) => ({ ...f, event: e.target.value }))} style={s}>
+                {PR_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </label>
+            <label>
+              <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>Result</div>
+              <input value={form.result} onChange={(e) => setForm((f) => ({ ...f, result: e.target.value }))}
+                placeholder="22:45 or 42.2km" style={s} autoFocus />
+            </label>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {done.map((g) => (
-              <div key={g.id} className="goal done" style={{ cursor: "pointer" }}>
-                <div className="goal-check done" onClick={(e) => { e.stopPropagation(); toggleGoal(g.id); }}>
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <path d="M2 6L5 9L10 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </div>
-                <div className="goal-body" onClick={() => openEdit(g)}>
-                  <div className="goal-title">{g.title}</div>
-                  <div className="goal-meta">{g.due}</div>
-                </div>
-              </div>
-            ))}
+          <label>
+            <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>Date</div>
+            <input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} style={s} />
+          </label>
+          <label>
+            <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>Notes</div>
+            <input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              placeholder="Paris Marathon, hot day…" style={s} />
+          </label>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 24, justifyContent: "space-between" }}>
+          {isEdit ? (
+            <button type="button" className="btn ghost" style={{ color: "var(--danger)" }}
+              onClick={() => { onDelete(editing.id); onClose(); }}>Delete</button>
+          ) : <div />}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn">{isEdit ? "Save" : "Add"}</button>
           </div>
-        </>
-      )}
-
-      <GoalModal open={modalOpen} onClose={() => setModalOpen(false)}
-        editing={editing} onAdd={addGoal} onEdit={editGoal} onDelete={removeGoal} />
+        </div>
+      </form>
     </div>
   );
 }
 
-// --- Plan (calendar) ---
-function Plan() {
-  const { plan: planState, togglePlan: togglePlanItem, runs, addPlan, editPlan, removePlan } = useData();
+function PersonalRecords() {
+  const { profile, saveProfile } = useData();
   const [modalOpen, setModalOpen] = uS(false);
   const [editing, setEditing] = uS(null);
-  const [prefilDate, setPrefilDate] = uS(null);
-  const today = new Date();
 
-  const openNew = (date) => { setEditing(null); setPrefilDate(date || null); setModalOpen(true); };
-  const openEdit = (p) => { setEditing(p); setModalOpen(true); };
+  const records = profile.personalRecords || [];
 
-  // Build a 4-week grid starting from this week's Monday
-  const startMonday = new Date(today);
-  startMonday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const openNew = () => { setEditing(null); setModalOpen(true); };
+  const openEdit = (r) => { setEditing(r); setModalOpen(true); };
 
-  const weeks = [];
-  for (let w = 0; w < 4; w++) {
-    const week = [];
-    for (let d = 0; d < 7; d++) {
-      const date = new Date(startMonday);
-      date.setDate(startMonday.getDate() + w * 7 + d);
-      const planItem = planState.find((p) => p.date.toDateString() === date.toDateString());
-      const completedRun = runs.find((r) => r.date.toDateString() === date.toDateString());
-      week.push({ date, planItem, completedRun });
+  const saveRecord = async (rec) => {
+    let updated;
+    if (editing) {
+      updated = records.map((r) => r.id === editing.id ? { ...r, ...rec } : r);
+    } else {
+      updated = [...records, { ...rec, id: `pr-${Date.now()}` }];
     }
-    weeks.push(week);
-  }
+    await saveProfile({ ...profile, personalRecords: updated });
+  };
 
-  const weekTotals = weeks.map((w) =>
-    w.reduce((a, d) => a + (d.planItem?.distance || 0), 0)
-  );
+  const deleteRecord = async (id) => {
+    await saveProfile({ ...profile, personalRecords: records.filter((r) => r.id !== id) });
+  };
+
+  // Group by event category
+  const grouped = PR_CATEGORIES.reduce((acc, cat) => {
+    const catRecords = records.filter((r) => r.event === cat);
+    if (catRecords.length) acc[cat] = catRecords;
+    return acc;
+  }, {});
+  const otherRecords = records.filter((r) => !PR_CATEGORIES.includes(r.event));
+  if (otherRecords.length) grouped["Other"] = (grouped["Other"] || []).concat(otherRecords);
 
   return (
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>Training plan</h1>
-          <div className="sub">4-WEEK BLOCK · {planState.length} WORKOUT{planState.length === 1 ? "" : "S"} PLANNED</div>
+          <h1>Personal Records</h1>
+          <div className="sub">{records.length} ENTR{records.length === 1 ? "Y" : "IES"}</div>
         </div>
         <div className="right">
-          <button className="btn" onClick={() => openNew()}>+ Plan workout</button>
+          <button className="btn" onClick={openNew}>+ Add record</button>
         </div>
       </div>
 
-      <div className="cal-grid" style={{ marginBottom: 6 }}>
-        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-          <div key={d} className="cal-head">{d}</div>
-        ))}
-      </div>
+      {records.length === 0 && (
+        <div className="card" style={{ padding: 40, textAlign: "center" }}>
+          <div className="mono" style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>No records yet</div>
+          <p style={{ color: "var(--text-2)", fontSize: 14, margin: "0 0 20px" }}>Log your race times, distance bests, or any personal milestone.</p>
+          <button className="btn" onClick={openNew}>+ Add first record</button>
+        </div>
+      )}
 
-      {weeks.map((week, wi) => (
-        <div key={wi} style={{ marginBottom: 12 }}>
-          <div className="cal-grid">
-            {week.map((day, di) => {
-              const isToday = day.date.toDateString() === today.toDateString();
-              const isPast = day.date < today && !isToday;
-              const hasWorkout = !!day.planItem;
-              const isDone = day.planItem?.done || !!day.completedRun;
-              return (
-                <div key={di}
-                  className={`cal-cell ${isPast ? "past" : ""} ${isToday ? "today" : ""} ${hasWorkout ? "has-workout" : ""} ${isDone ? "done" : ""}`}
-                  onClick={(e) => {
-                    if (day.planItem) openEdit(day.planItem);
-                    else openNew(day.date);
-                  }}>
-                  <div className="num">{day.date.getDate()}</div>
-                  {isDone && <div className="dot" />}
-                  {day.planItem && (
-                    <div className="wk">
-                      <span className={`type-badge ${day.planItem.type}`}>{day.planItem.type}</span>
-                      <div className="d" onClick={(e) => { e.stopPropagation(); togglePlanItem(day.planItem.id); }}>
-                        {day.planItem.distance}km · {day.planItem.desc}
-                      </div>
-                    </div>
-                  )}
-                  {day.completedRun && !day.planItem && (
-                    <div className="wk">
-                      <span className={`type-badge ${day.completedRun.type}`}>{day.completedRun.type}</span>
-                      <div className="d">{day.completedRun.distance}km · done</div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+      {Object.entries(grouped).map(([cat, catRecords]) => (
+        <div key={cat}>
+          <div className="sect-title">
+            <h2>{cat}</h2>
+            <div className="meta">{catRecords.length} RECORD{catRecords.length > 1 ? "S" : ""}</div>
           </div>
-          <div style={{
-            display: "flex", justifyContent: "flex-end",
-            fontFamily: "JetBrains Mono, monospace",
-            fontSize: 11, color: "var(--text-3)",
-            padding: "6px 4px 0",
-          }}>
-            WEEK {wi + 1} · {weekTotals[wi].toFixed(1)}km planned
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {catRecords
+              .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
+              .map((r) => (
+              <div key={r.id}
+                className="card"
+                style={{ display: "flex", alignItems: "center", gap: 20, padding: "16px 20px", cursor: "pointer" }}
+                onClick={() => openEdit(r)}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontWeight: 700, fontSize: 22, letterSpacing: "-0.02em", color: "var(--accent)" }}>
+                    {r.result}
+                  </div>
+                  {r.notes && <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>{r.notes}</div>}
+                </div>
+                {r.date && (
+                  <div className="mono" style={{ fontSize: 12, color: "var(--text-3)", textAlign: "right" }}>
+                    {new Date(r.date).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
+                  </div>
+                )}
+                <div className="mono" style={{ fontSize: 10, color: "var(--text-3)" }}>✎</div>
+              </div>
+            ))}
           </div>
         </div>
       ))}
 
-      <PlanModal open={modalOpen} onClose={() => setModalOpen(false)}
-        editing={editing} prefilDate={prefilDate}
-        onAdd={addPlan} onEdit={editPlan} onDelete={removePlan} />
+      <PRModal
+        open={modalOpen}
+        onClose={() => { setModalOpen(false); setEditing(null); }}
+        onSave={saveRecord}
+        onDelete={deleteRecord}
+        editing={editing}
+      />
     </div>
   );
 }
@@ -1055,4 +1033,4 @@ function PRDisplay({ label, value }) {
   );
 }
 
-Object.assign(window, { Home, History, Stats, Goals, Plan, Profile, RunDetail });
+Object.assign(window, { Home, History, Stats, PersonalRecords, Profile, RunDetail });
