@@ -417,6 +417,15 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
     }
   }, [editing, open]);
 
+  // Repeat block: user defines two "halves" (high + low) and a rep count.
+  // Pressing Add appends `rep × [high, low]` segments.
+  // NOTE: must be declared before the early return to satisfy the Rules of Hooks.
+  const [repeat, setRepeat] = React.useState({
+    reps: 5,
+    high: { distance: "", duration: "", speed: "", computeMode: "speed", note: "work" },
+    low:  { distance: "", duration: "", speed: "", computeMode: "speed", note: "rest" },
+  });
+
   if (!open) return null;
 
   // Any edit to distance/duration/speed runs through applyEdit which picks the
@@ -444,13 +453,6 @@ function AddRunModal({ open, onClose, onAdd, onEdit, onDelete, editing }) {
     segments: f.segments.map((s, idx) => idx === i ? deriveFromTwo({ ...s, computeMode: mode }, mode) : s),
   }));
 
-  // Repeat block: user defines two "halves" (high + low) and a rep count.
-  // Pressing Add appends `rep × [high, low]` segments.
-  const [repeat, setRepeat] = React.useState({
-    reps: 5,
-    high: { distance: "", duration: "", speed: "", computeMode: "speed", note: "work" },
-    low:  { distance: "", duration: "", speed: "", computeMode: "speed", note: "rest" },
-  });
   const updRepeat = (half, k, v) => setRepeat((r) => {
     if (k === "computeMode") {
       return { ...r, [half]: deriveFromTwo({ ...r[half], computeMode: v }, v) };
