@@ -36,7 +36,7 @@ function DataProvider({ children }) {
   const [goals, setGoals] = React.useState([]);
   const [plan, setPlan] = React.useState([]);
   const [profile, setProfile] = React.useState({
-    name: "", tagline: "", pr5k: "", pr10k: "", prHalf: "", memberSince: "",
+    name: "", tagline: "", pr5k: "", pr10k: "", prHalf: "", memberSince: "", customAchs: [],
   });
   const [configOpen, setConfigOpen] = React.useState(false);
 
@@ -45,7 +45,7 @@ function DataProvider({ children }) {
     if (!ok) {
       setMode("unconfigured");
       setRuns([]); setGoals([]); setPlan([]);
-      setProfile({ name: "", tagline: "", pr5k: "", pr10k: "", prHalf: "", memberSince: "" });
+      setProfile({ name: "", tagline: "", pr5k: "", pr10k: "", prHalf: "", memberSince: "", customAchs: [] });
       return;
     }
     const [r, g, p, pr] = await Promise.all([fetchRuns(), fetchGoals(), fetchPlan(), fetchProfile()]);
@@ -155,7 +155,7 @@ function DataProvider({ children }) {
   const resetAll = async () => {
     await wipeAllData();
     setRuns([]); setGoals([]); setPlan([]);
-    setProfile({ name: "", tagline: "", pr5k: "", pr10k: "", prHalf: "", memberSince: "" });
+    setProfile({ name: "", tagline: "", pr5k: "", pr10k: "", prHalf: "", memberSince: "", customAchs: [] });
   };
 
   return (
