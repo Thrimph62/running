@@ -803,19 +803,16 @@ function SegmentsBlock({ segments }) {
   const [open, setOpen] = uS(false);
 
   // Build chart data: one bar per kilometer, computed from segments
-  // Each segment has a pace (s/km); we "unroll" segments into 1km buckets
-  // using weighted average speed when a km spans multiple segments.
-  const chartData = uS(() => {
+  const chartData = uM(() => {
     const kms = [];
-    let cumDist = 0; // km accumulated so far (float)
-    let kmIndex = 0; // current 1km bucket (0-based)
-    let bucketSpeed = 0; // weighted speed accumulator for current km
-    let bucketFilled = 0; // how much of this km is filled (0–1)
+    let kmIndex = 0;
+    let bucketSpeed = 0;
+    let bucketFilled = 0;
 
     for (const s of segments) {
       if (!s.distance || !s.pace) continue;
       const segDist = parseFloat(s.distance);
-      const segSpeed = 3600 / s.pace; // km/h
+      const segSpeed = 3600 / s.pace;
       let remaining = segDist;
 
       while (remaining > 0) {
@@ -825,7 +822,7 @@ function SegmentsBlock({ segments }) {
         bucketFilled += take;
         remaining -= take;
 
-        if (bucketFilled >= 0.9999) { // bucket complete
+        if (bucketFilled >= 0.9999) {
           kms.push({ km: kmIndex + 1, speed: +bucketSpeed.toFixed(1) });
           kmIndex++;
           bucketSpeed = 0;
@@ -833,12 +830,11 @@ function SegmentsBlock({ segments }) {
         }
       }
     }
-    // partial last km
     if (bucketFilled > 0.05) {
       kms.push({ km: kmIndex + 1, speed: +(bucketSpeed / bucketFilled).toFixed(1) });
     }
     return kms;
-  })[0];
+  }, [segments]);
   const maxSpeed = Math.max(...chartData.map((d) => d.speed), 1);
 
   return (
