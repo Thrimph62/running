@@ -798,35 +798,27 @@ function RunDetail({ run, onClose, onEdit }) {
   );
 }
 
-// Collapsible segments block with speed-per-segment bar chart
+
+// Collapsible segments block with speed-per-kilometer bar chart
 function SegmentsBlock({ segments }) {
   const [open, setOpen] = uS(false);
 
-  // Build chart data: one bar per kilometer, computed from segments
   const chartData = uM(() => {
     const kms = [];
-    let kmIndex = 0;
-    let bucketSpeed = 0;
-    let bucketFilled = 0;
-
+    let kmIndex = 0, bucketSpeed = 0, bucketFilled = 0;
     for (const s of segments) {
       if (!s.distance || !s.pace) continue;
       const segDist = parseFloat(s.distance);
       const segSpeed = 3600 / s.pace;
       let remaining = segDist;
-
       while (remaining > 0) {
-        const spaceInBucket = 1 - bucketFilled;
-        const take = Math.min(remaining, spaceInBucket);
+        const take = Math.min(remaining, 1 - bucketFilled);
         bucketSpeed += segSpeed * take;
         bucketFilled += take;
         remaining -= take;
-
         if (bucketFilled >= 0.9999) {
           kms.push({ km: kmIndex + 1, speed: +bucketSpeed.toFixed(1) });
-          kmIndex++;
-          bucketSpeed = 0;
-          bucketFilled = 0;
+          kmIndex++; bucketSpeed = 0; bucketFilled = 0;
         }
       }
     }
@@ -835,28 +827,27 @@ function SegmentsBlock({ segments }) {
     }
     return kms;
   }, [segments]);
+
   const maxSpeed = Math.max(...chartData.map((d) => d.speed), 1);
 
   return (
     <div style={{ marginBottom: 20 }}>
-      {/* Header — always visible */}
       <div className="sect-title" style={{ margin: "0 0 0", cursor: "pointer" }}
         onClick={() => setOpen((o) => !o)}>
         <h2>Intervals</h2>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div className="meta">{segments.length} SEGMENTS</div>
-          <div style={{
-            fontFamily: "JetBrains Mono, monospace", fontSize: 11,
-            color: "var(--accent)", userSelect: "none",
-          }}>{open ? "▲ collapse" : "▼ expand"}</div>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "var(--accent)", userSelect: "none" }}>
+            {open ? "▲ collapse" : "▼ expand"}
+          </div>
         </div>
       </div>
 
-      {/* Speed bar chart — always visible */}
       <div style={{ margin: "12px 0 0" }}>
         {(() => {
+          if (chartData.length === 0) return null;
           const w = 680, h = 90, padL = 28, padR = 8, padT = 10, padB = 22;
-          const bw = Math.max(4, (w - padL - padR) / Math.max(chartData.length, 1) - 4);
+          const bw = Math.max(4, (w - padL - padR) / chartData.length - 4);
           return (
             <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none"
               style={{ width: "100%", height: h, display: "block" }}>
@@ -881,7 +872,6 @@ function SegmentsBlock({ segments }) {
                   </g>
                 );
               })}
-              {/* Y axis label */}
               <text x={padL - 4} y={padT + 4} textAnchor="end"
                 fontSize="9" fill="var(--text-3)" fontFamily="JetBrains Mono">
                 km/h
@@ -891,7 +881,6 @@ function SegmentsBlock({ segments }) {
         })()}
       </div>
 
-      {/* Expandable table */}
       {open && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
           <div style={{
@@ -925,6 +914,7 @@ function SegmentsBlock({ segments }) {
       )}
     </div>
   );
+}
 
 const inlineInput = {
   background: "var(--bg-2)",
