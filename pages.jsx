@@ -781,40 +781,7 @@ function RunDetail({ run, onClose, onEdit }) {
         </div>
 
         {run.segments && run.segments.length > 0 && (
-          <>
-            <div className="sect-title" style={{ margin: "0 0 12px" }}>
-              <h2>Intervals</h2>
-              <div className="meta">{run.segments.length} SEGMENTS</div>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
-              <div style={{
-                display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 2fr",
-                gap: 12, padding: "8px 12px",
-                fontFamily: "JetBrains Mono, monospace", fontSize: 10,
-                color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em",
-                borderBottom: "1px solid var(--line)",
-              }}>
-                <div>#</div><div>Distance</div><div>Duration</div><div>Speed / Pace</div><div>Note</div>
-              </div>
-              {run.segments.map((s, i) => {
-                const speed = s.pace ? +(3600 / s.pace).toFixed(1) : 0;
-                return (
-                  <div key={i} style={{
-                    display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 2fr",
-                    gap: 12, padding: "10px 12px",
-                    background: "var(--bg-2)", borderRadius: 8,
-                    fontFamily: "JetBrains Mono, monospace", fontSize: 13,
-                  }}>
-                    <div style={{ color: "var(--text-3)" }}>{i + 1}</div>
-                    <div>{s.distance}<span style={{ color: "var(--text-3)" }}>km</span></div>
-                    <div>{formatDuration(s.duration)}</div>
-                    <div>{speed || "—"}<span style={{ color: "var(--text-3)", fontSize: 11 }}> km/h</span> <span style={{ color: "var(--text-3)" }}>· {secondsToPace(s.pace)}</span></div>
-                    <div style={{ color: "var(--text-2)" }}>{s.note || "—"}</div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
+          <SegmentsBlock segments={run.segments} />
         )}
 
         {run.splits && run.splits.length > 0 && (
@@ -826,27 +793,142 @@ function RunDetail({ run, onClose, onEdit }) {
             <SplitsChart splits={run.splits} />
           </>
         )}
-
-        <div className="grid g-3" style={{ marginTop: 20 }}>
-          <div>
-            <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Avg HR</div>
-            <div className="display" style={{ fontSize: 20, marginTop: 4 }}>{run.hr}<span style={{ fontSize: 12, color: "var(--text-3)" }}> bpm</span></div>
-          </div>
-          <div>
-            <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Cadence</div>
-            <div className="display" style={{ fontSize: 20, marginTop: 4 }}>{run.cadence}<span style={{ fontSize: 12, color: "var(--text-3)" }}> spm</span></div>
-          </div>
-          <div>
-            <div className="mono" style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Feel</div>
-            <div className="display" style={{ fontSize: 20, marginTop: 4 }}>
-              {"●".repeat(run.feel)}<span style={{ color: "var(--text-3)" }}>{"●".repeat(5 - run.feel)}</span>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
 }
+
+// Collapsible segments block with speed-per-segment bar chart
+function SegmentsBlock({ segments }) {
+  const [open, setOpen] = uS(false);
+
+  // Build chart data: one bar per kilometer, computed from segments
+  // Each segment has a pace (s/km); we "unroll" segments into 1km buckets
+  // using weighted average speed when a km spans multiple segments.
+  const chartData = uS(() => {
+    const kms = [];
+    let cumDist = 0; // km accumulated so far (float)
+    let kmIndex = 0; // current 1km bucket (0-based)
+    let bucketSpeed = 0; // weighted speed accumulator for current km
+    let bucketFilled = 0; // how much of this km is filled (0–1)
+
+    for (const s of segments) {
+      if (!s.distance || !s.pace) continue;
+      const segDist = parseFloat(s.distance);
+      const segSpeed = 3600 / s.pace; // km/h
+      let remaining = segDist;
+
+      while (remaining > 0) {
+        const spaceInBucket = 1 - bucketFilled;
+        const take = Math.min(remaining, spaceInBucket);
+        bucketSpeed += segSpeed * take;
+        bucketFilled += take;
+        remaining -= take;
+
+        if (bucketFilled >= 0.9999) { // bucket complete
+          kms.push({ km: kmIndex + 1, speed: +bucketSpeed.toFixed(1) });
+          kmIndex++;
+          bucketSpeed = 0;
+          bucketFilled = 0;
+        }
+      }
+    }
+    // partial last km
+    if (bucketFilled > 0.05) {
+      kms.push({ km: kmIndex + 1, speed: +(bucketSpeed / bucketFilled).toFixed(1) });
+    }
+    return kms;
+  })[0];
+  const maxSpeed = Math.max(...chartData.map((d) => d.speed), 1);
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      {/* Header — always visible */}
+      <div className="sect-title" style={{ margin: "0 0 0", cursor: "pointer" }}
+        onClick={() => setOpen((o) => !o)}>
+        <h2>Intervals</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="meta">{segments.length} SEGMENTS</div>
+          <div style={{
+            fontFamily: "JetBrains Mono, monospace", fontSize: 11,
+            color: "var(--accent)", userSelect: "none",
+          }}>{open ? "▲ collapse" : "▼ expand"}</div>
+        </div>
+      </div>
+
+      {/* Speed bar chart — always visible */}
+      <div style={{ margin: "12px 0 0" }}>
+        {(() => {
+          const w = 680, h = 90, padL = 28, padR = 8, padT = 10, padB = 22;
+          const bw = Math.max(4, (w - padL - padR) / Math.max(chartData.length, 1) - 4);
+          return (
+            <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none"
+              style={{ width: "100%", height: h, display: "block" }}>
+              {chartData.map((d, i) => {
+                const bh = d.speed ? ((h - padT - padB) * d.speed) / (maxSpeed * 1.15) : 0;
+                const bx = padL + i * ((w - padL - padR) / chartData.length) + 2;
+                const by = h - padB - bh;
+                return (
+                  <g key={i}>
+                    <rect x={bx} y={by} width={bw} height={bh}
+                      fill="var(--accent)" opacity="0.85" rx="2" />
+                    <text x={bx + bw / 2} y={h - 6} textAnchor="middle"
+                      fontSize="9" fill="var(--text-3)" fontFamily="JetBrains Mono">
+                      {d.km}
+                    </text>
+                    {bh > 18 && (
+                      <text x={bx + bw / 2} y={by + 12} textAnchor="middle"
+                        fontSize="9" fill="var(--bg)" fontFamily="JetBrains Mono" fontWeight="700">
+                        {d.speed}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+              {/* Y axis label */}
+              <text x={padL - 4} y={padT + 4} textAnchor="end"
+                fontSize="9" fill="var(--text-3)" fontFamily="JetBrains Mono">
+                km/h
+              </text>
+            </svg>
+          );
+        })()}
+      </div>
+
+      {/* Expandable table */}
+      {open && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+          <div style={{
+            display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 2fr",
+            gap: 12, padding: "8px 12px",
+            fontFamily: "JetBrains Mono, monospace", fontSize: 10,
+            color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em",
+            borderBottom: "1px solid var(--line)",
+          }}>
+            <div>#</div><div>Distance</div><div>Duration</div><div>Speed / Pace</div><div>Note</div>
+          </div>
+          {segments.map((s, i) => {
+            const speed = s.pace ? +(3600 / s.pace).toFixed(1) : 0;
+            return (
+              <div key={i} style={{
+                display: "grid", gridTemplateColumns: "32px 1fr 1fr 1fr 2fr",
+                gap: 12, padding: "10px 12px",
+                background: "var(--bg-2)", borderRadius: 8,
+                fontFamily: "JetBrains Mono, monospace", fontSize: 13,
+              }}>
+                <div style={{ color: "var(--text-3)" }}>{i + 1}</div>
+                <div>{s.distance}<span style={{ color: "var(--text-3)" }}>km</span></div>
+                <div>{formatDuration(s.duration)}</div>
+                <div>{speed || "—"}<span style={{ color: "var(--text-3)", fontSize: 11 }}> km/h</span>
+                  <span style={{ color: "var(--text-3)" }}> · {secondsToPace(s.pace)}</span></div>
+                <div style={{ color: "var(--text-2)" }}>{s.note || "—"}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 
 const inlineInput = {
   background: "var(--bg-2)",
