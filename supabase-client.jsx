@@ -44,7 +44,9 @@ async function loadSupabaseLib() {
   return window.supabase;
 }
 
-async function initSupabase() {
+async function initSupabase(force = false) {
+  // Already initialised — skip unless forced (e.g. after saving new credentials)
+  if (!force && supabaseReady && supabase) return true;
   const { url, key } = getSupabaseConfig();
   if (!url || !key) {
     supabaseReady = false;

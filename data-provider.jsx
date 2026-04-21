@@ -41,12 +41,16 @@ function DataProvider({ children }) {
   const [configOpen, setConfigOpen] = React.useState(false);
 
   const reload = React.useCallback(async () => {
-    const ok = await initSupabase();
-    if (!ok) {
-      setMode("unconfigured");
-      setRuns([]); setGoals([]); setPlan([]);
-      setProfile({ name: "", tagline: "", pr5k: "", pr10k: "", prHalf: "", memberSince: "", customAchs: [], personalRecords: [] });
-      return;
+    // Only (re)init if not already connected — avoids recreating the client
+    // and losing the auth session that AuthGate established.
+    if (!supabaseReady) {
+      const ok = await initSupabase();
+      if (!ok) {
+        setMode("unconfigured");
+        setRuns([]); setGoals([]); setPlan([]);
+        setProfile({ name: "", tagline: "", pr5k: "", pr10k: "", prHalf: "", memberSince: "", customAchs: [], personalRecords: [] });
+        return;
+      }
     }
     const [r, g, p, pr] = await Promise.all([fetchRuns(), fetchGoals(), fetchPlan(), fetchProfile()]);
     setRuns(r || []);
@@ -185,7 +189,8 @@ function ConfigPanel({ open, onClose, onSaved }) {
   const save = async () => {
     setStatus("Connecting...");
     saveSupabaseConfig(url.trim(), key.trim());
-    const ok = await initSupabase();
+    // force=true so the new credentials replace the existing client
+    const ok = await initSupabase(true);
     if (ok) {
       setStatus("Connected ✓");
       setTimeout(() => { onSaved(); onClose(); }, 400);
