@@ -56,6 +56,9 @@ function Rail({ tab, setTab, onConfig }) {
           {mode === "supabase" ? "ON" : mode === "unconfigured" ? "OFF" : "..."}
         </span>
       </button>
+      <button className="rail-item" onClick={() => authSignOut()} style={{ marginBottom: 4, color: "var(--text-3)" }}>
+        Sign out
+      </button>
       <div className="rail-profile">
         <div className="avatar">{initials}</div>
         <div>
@@ -197,11 +200,13 @@ function Shell() {
 function App() {
   return (
     <ErrorBoundary>
-      <DataProvider>
-        <ErrorBoundary>
-          <Shell />
-        </ErrorBoundary>
-      </DataProvider>
+      <AuthGate>
+        <DataProvider>
+          <ErrorBoundary>
+            <Shell />
+          </ErrorBoundary>
+        </DataProvider>
+      </AuthGate>
     </ErrorBoundary>
   );
 }

@@ -62,6 +62,33 @@ async function initSupabase() {
   }
 }
 
+// ---- Auth ----
+async function authSignIn(email, password) {
+  if (!supabaseReady) throw new Error("Supabase not initialised");
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data.session;
+}
+
+async function authSignOut() {
+  if (!supabaseReady) return;
+  await supabase.auth.signOut();
+}
+
+async function authGetSession() {
+  if (!supabaseReady) return null;
+  const { data } = await supabase.auth.getSession();
+  return data.session;
+}
+
+function authOnChange(callback) {
+  if (!supabaseReady) return () => {};
+  const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    callback(session);
+  });
+  return () => subscription.unsubscribe();
+}
+
 // ---- Data layer ----
 // Shape expected by the app:
 // runs: { id, date (Date), type, routeName, distance, duration, pace, paceStr, elevation, hr, cadence, splits, feel, vibe }
@@ -273,6 +300,7 @@ async function updateProfile(p) {
 
 Object.assign(window, {
   initSupabase, getSupabaseConfig, saveSupabaseConfig, clearSupabaseConfig,
+  authSignIn, authSignOut, authGetSession, authOnChange,
   fetchRuns, insertRun, updateRun, deleteRun,
   fetchGoals, updateGoalDone, insertGoal, updateGoal, deleteGoal,
   fetchPlan, updatePlanDone, insertPlan, updatePlan, deletePlan,

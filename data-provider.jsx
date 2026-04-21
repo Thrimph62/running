@@ -1007,4 +1007,110 @@ function RepeatHalf({ label, half, data, onChange }) {
   );
 }
 
-Object.assign(window, { DataCtx, DataProvider, useData, ConfigPanel, AddRunModal, GoalModal, PlanModal, ErrorBoundary });
+// ---- Auth Gate ----
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [status, setStatus] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!email || !password) return;
+    setLoading(true);
+    setStatus("");
+    try {
+      await authSignIn(email.trim(), password);
+      // onLogin will be triggered by authOnChange listener in AuthGate
+    } catch (err) {
+      setStatus(err.message || "Login failed");
+      setLoading(false);
+    }
+  };
+
+  const inputStyle = {
+    width: "100%", background: "var(--bg-2)", border: "1px solid var(--line)",
+    borderRadius: 8, padding: "12px 14px", color: "var(--text)",
+    fontFamily: "JetBrains Mono, monospace", fontSize: 14, outline: "none",
+    boxSizing: "border-box",
+  };
+
+  return (
+    <div style={{
+      minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+      background: "var(--bg)", padding: 24,
+    }}>
+      <div style={{ width: "100%", maxWidth: 400 }}>
+        <div style={{ marginBottom: 40, textAlign: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 8 }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--accent)" }} />
+            <div style={{ fontFamily: "JetBrains Mono, monospace", fontWeight: 700, fontSize: 16, letterSpacing: "0.15em" }}>PACELOG</div>
+          </div>
+          <h1 style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 26, letterSpacing: "-0.03em", margin: "0 0 6px", color: "var(--text)" }}>
+            Welcome back
+          </h1>
+          <div style={{ fontSize: 13, color: "var(--text-3)", fontFamily: "JetBrains Mono, monospace" }}>
+            Sign in to access your runs
+          </div>
+        </div>
+
+        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <label>
+            <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>Email</div>
+            <input
+              type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com" style={inputStyle} autoFocus autoComplete="email" />
+          </label>
+          <label>
+            <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>Password</div>
+            <input
+              type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••" style={inputStyle} autoComplete="current-password" />
+          </label>
+
+          {status && (
+            <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#ff5a1f", padding: "10px 14px", background: "color-mix(in oklab, #ff5a1f 12%, transparent)", borderRadius: 8, border: "1px solid color-mix(in oklab, #ff5a1f 30%, transparent)" }}>
+              {status}
+            </div>
+          )}
+
+          <button type="submit" className="btn" disabled={loading}
+            style={{ marginTop: 4, padding: "14px", fontSize: 14, opacity: loading ? 0.6 : 1 }}>
+            {loading ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AuthGate({ children }) {
+  const [authState, setAuthState] = React.useState("loading"); // loading | authenticated | unauthenticated
+
+  React.useEffect(() => {
+    // Check existing session on mount
+    initSupabase().then(async (ok) => {
+      if (!ok) { setAuthState("unauthenticated"); return; }
+      const session = await authGetSession();
+      setAuthState(session ? "authenticated" : "unauthenticated");
+      // Listen for future changes (sign in / sign out)
+      authOnChange((s) => setAuthState(s ? "authenticated" : "unauthenticated"));
+    });
+  }, []);
+
+  if (authState === "loading") {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Loading…</div>
+      </div>
+    );
+  }
+
+  if (authState === "unauthenticated") {
+    return <LoginScreen />;
+  }
+
+  return children;
+}
+
+Object.assign(window, { DataCtx, DataProvider, useData, ConfigPanel, AddRunModal, GoalModal, PlanModal, ErrorBoundary, AuthGate });
