@@ -99,7 +99,7 @@ function authOnChange(callback) {
 
 async function fetchRuns() {
   if (!supabaseReady) return null;
-  const { data, error } = await supabase.from("runs").select("*").order("date", { ascending: false });
+  const { data, error } = await supabase.from("running_runs").select("*").order("date", { ascending: false });
   if (error) { console.error(error); return null; }
   return data.map((r) => ({
     id: r.id,
@@ -137,14 +137,14 @@ async function insertRun(run) {
     feel: run.feel || 3,
     vibe: run.vibe || "flat",
   };
-  const { data, error } = await supabase.from("runs").insert(payload).select().single();
+  const { data, error } = await supabase.from("running_runs").insert(payload).select().single();
   if (error) throw error;
   return data;
 }
 
 async function updateRun(id, run) {
   if (!supabaseReady) return;
-  await supabase.from("runs").update({
+  await supabase.from("running_runs").update({
     date: run.date.toISOString(),
     type: run.type,
     route_name: run.routeName,
@@ -161,12 +161,12 @@ async function updateRun(id, run) {
 
 async function deleteRun(id) {
   if (!supabaseReady) return;
-  await supabase.from("runs").delete().eq("id", id);
+  await supabase.from("running_runs").delete().eq("id", id);
 }
 
 async function fetchGoals() {
   if (!supabaseReady) return null;
-  const { data, error } = await supabase.from("goals").select("*").order("created_at");
+  const { data, error } = await supabase.from("running_goals").select("*").order("created_at");
   if (error) { console.error(error); return null; }
   return data.map((g) => ({
     id: g.id,
@@ -181,12 +181,12 @@ async function fetchGoals() {
 
 async function updateGoalDone(id, done) {
   if (!supabaseReady) return;
-  await supabase.from("goals").update({ done }).eq("id", id);
+  await supabase.from("running_goals").update({ done }).eq("id", id);
 }
 
 async function insertGoal(g) {
   if (!supabaseReady) throw new Error("Supabase not configured");
-  const { data, error } = await supabase.from("goals").insert({
+  const { data, error } = await supabase.from("running_goals").insert({
     title: g.title, target: g.target, current: g.current || 0,
     unit: g.unit || "km", due: g.due || "", done: !!g.done,
   }).select().single();
@@ -196,7 +196,7 @@ async function insertGoal(g) {
 
 async function updateGoal(id, g) {
   if (!supabaseReady) return;
-  await supabase.from("goals").update({
+  await supabase.from("running_goals").update({
     title: g.title, target: g.target, current: g.current,
     unit: g.unit, due: g.due, done: g.done,
   }).eq("id", id);
@@ -204,12 +204,12 @@ async function updateGoal(id, g) {
 
 async function deleteGoal(id) {
   if (!supabaseReady) return;
-  await supabase.from("goals").delete().eq("id", id);
+  await supabase.from("running_goals").delete().eq("id", id);
 }
 
 async function fetchPlan() {
   if (!supabaseReady) return null;
-  const { data, error } = await supabase.from("plan").select("*").order("date");
+  const { data, error } = await supabase.from("running_plan").select("*").order("date");
   if (error) { console.error(error); return null; }
   return data.map((p) => ({
     id: p.id,
@@ -223,12 +223,12 @@ async function fetchPlan() {
 
 async function updatePlanDone(id, done) {
   if (!supabaseReady) return;
-  await supabase.from("plan").update({ done }).eq("id", id);
+  await supabase.from("running_plan").update({ done }).eq("id", id);
 }
 
 async function insertPlan(p) {
   if (!supabaseReady) throw new Error("Supabase not configured");
-  const { data, error } = await supabase.from("plan").insert({
+  const { data, error } = await supabase.from("running_plan").insert({
     date: p.date.toISOString(), type: p.type,
     distance: p.distance, description: p.desc || "", done: !!p.done,
   }).select().single();
@@ -238,7 +238,7 @@ async function insertPlan(p) {
 
 async function updatePlan(id, p) {
   if (!supabaseReady) return;
-  await supabase.from("plan").update({
+  await supabase.from("running_plan").update({
     date: p.date.toISOString(), type: p.type,
     distance: p.distance, description: p.desc, done: p.done,
   }).eq("id", id);
@@ -246,7 +246,7 @@ async function updatePlan(id, p) {
 
 async function deletePlan(id) {
   if (!supabaseReady) return;
-  await supabase.from("plan").delete().eq("id", id);
+  await supabase.from("running_plan").delete().eq("id", id);
 }
 
 async function wipeAllData() {
@@ -257,10 +257,10 @@ async function wipeAllData() {
   if (!supabaseReady) return true;
   // neq with an impossible UUID matches all rows
   const all = "00000000-0000-0000-0000-000000000000";
-  await supabase.from("runs").delete().neq("id", all);
-  await supabase.from("goals").delete().neq("id", all);
-  await supabase.from("plan").delete().neq("id", all);
-  await supabase.from("profile").update({
+  await supabase.from("running_runs").delete().neq("id", all);
+  await supabase.from("running_goals").delete().neq("id", all);
+  await supabase.from("running_plan").delete().neq("id", all);
+  await supabase.from("running_profile").update({
     name: "", tagline: "",
     pr_5k: null, pr_10k: null, pr_half: null,
   }).eq("id", 1);
@@ -269,7 +269,7 @@ async function wipeAllData() {
 
 async function fetchProfile() {
   if (!supabaseReady) return null;
-  const { data, error } = await supabase.from("profile").select("*").eq("id", 1).single();
+  const { data, error } = await supabase.from("running_profile").select("*").eq("id", 1).single();
   if (error) { console.error(error); return null; }
   return {
     name: data.name || "",
@@ -286,7 +286,7 @@ async function fetchProfile() {
 async function updateProfile(p) {
   if (!supabaseReady) return;
   // Use upsert so the row is created if it doesn't exist yet (e.g. fresh schema).
-  const { error } = await supabase.from("profile").upsert({
+  const { error } = await supabase.from("running_profile").upsert({
     id: 1,
     name: p.name,
     tagline: p.tagline,
