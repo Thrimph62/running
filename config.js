@@ -6,6 +6,6 @@
 // Pages redeploys in ~60s.
 
 window.PACELOG_CONFIG = {
-  supabaseUrl: "https://hzfnijagivaouqwskafr.supabase.co",   // e.g. "https://xxxxxxxxxxxxxxxx.supabase.co"
-  supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6Zm5pamFnaXZhb3Vxd3NrYWZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MTUxOTYsImV4cCI6MjA5MjE5MTE5Nn0.uTf2EZpbwkLHU2WOzKRJ7GQX6siiNh8WPLYcc-z4eg8",   // the anon public key (long eyJ... string)
+  supabaseUrl: "https://wcmbbgkjjlohxviwjivm.supabase.co/rest/v1/",   // e.g. "https://xxxxxxxxxxxxxxxx.supabase.co"
+  supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndjbWJiZ2tqamxvaHh2aXdqaXZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MDk5NTMsImV4cCI6MjA5MjE4NTk1M30.CUf2regwchLkDtCPnQn-lkVBMR42LKkvMQs3QEUfdMs",   // the anon public key (long eyJ... string)
 };
